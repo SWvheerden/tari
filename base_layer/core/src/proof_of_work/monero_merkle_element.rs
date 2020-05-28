@@ -20,32 +20,52 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-mod blake_pow;
-mod difficulty;
-mod error;
-mod median_timestamp;
-mod monero_merkle_element;
-mod monero_merkle_hash_util;
-mod monero_merkle_proof;
-mod monero_merkle_tree;
-#[allow(clippy::enum_variant_names)]
-mod monero_rx;
-#[allow(clippy::module_inception)]
-mod proof_of_work;
-mod target_difficulty;
+use crate::proof_of_work::monero_merkle_hash_util::{create_leaf_hash, create_node_hash, empty_hash};
+use std::rc::Rc;
 
-#[cfg(test)]
-pub use blake_pow::test as blake_test;
+#[derive(Clone, Debug)]
+pub enum MoneroMerkleElement {
+    Node {
+        left_node: Box<MoneroMerkleElement>,
+        right_node: Box<MoneroMerkleElement>,
+        hash: Vec<u8>,
+    },
+    Leaf {
+        data: Rc<Vec<u8>>,
+        hash: Vec<u8>,
+    },
+    Empty {
+        hash: Vec<u8>,
+    },
+}
 
-#[cfg(test)]
-pub use monero_rx::test as monero_test;
+impl MoneroMerkleElement {
+    pub fn empty() -> Self {
+        MoneroMerkleElement::Empty { hash: empty_hash() }
+    }
 
-pub mod lwma_diff;
+    pub fn hash(&self) -> Option<&Vec<u8>> {
+        match *self {
+            MoneroMerkleElement::Node { ref hash, .. } |
+            MoneroMerkleElement::Leaf { ref hash, .. } |
+            MoneroMerkleElement::Empty { ref hash } => Some(hash),
+        }
+    }
 
-pub use blake_pow::{blake_difficulty, blake_difficulty_with_hash};
-pub use difficulty::{Difficulty, DifficultyAdjustment};
-pub use error::{DifficultyAdjustmentError, PowError};
-pub use median_timestamp::get_median_timestamp;
-pub use monero_rx::{monero_difficulty, monero_difficulty_with_hash, MoneroData};
-pub use proof_of_work::{PowAlgorithm, ProofOfWork};
-pub use target_difficulty::get_target_difficulty;
+    pub fn create_leaf(value: Rc<Vec<u8>>) -> MoneroMerkleElement {
+        let leaf_hash = create_leaf_hash(value.as_ref());
+        MoneroMerkleElement::Leaf {
+            data: value,
+            hash: leaf_hash,
+        }
+    }
+
+    pub fn create_node(left: MoneroMerkleElement, right: MoneroMerkleElement) -> MoneroMerkleElement {
+        let combined_hash = create_node_hash(left.hash().unwrap(), right.hash().unwrap());
+        MoneroMerkleElement::Node {
+            hash: combined_hash,
+            left_node: Box::new(left),
+            right_node: Box::new(right),
+        }
+    }
+}

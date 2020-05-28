@@ -20,32 +20,23 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-mod blake_pow;
-mod difficulty;
-mod error;
-mod median_timestamp;
-mod monero_merkle_element;
-mod monero_merkle_hash_util;
-mod monero_merkle_proof;
-mod monero_merkle_tree;
-#[allow(clippy::enum_variant_names)]
-mod monero_rx;
-#[allow(clippy::module_inception)]
-mod proof_of_work;
-mod target_difficulty;
+use sha3::{Digest, Keccak256};
 
-#[cfg(test)]
-pub use blake_pow::test as blake_test;
+pub fn empty_hash() -> Vec<u8> {
+    create_leaf_hash(&vec![0u8])
+}
 
-#[cfg(test)]
-pub use monero_rx::test as monero_test;
+pub fn create_leaf_hash(input: &Vec<u8>) -> Vec<u8> {
+    let mut hasher = Keccak256::new();
+    hasher.update(&input);
+    let result = hasher.finalize();
+    result.as_slice().to_vec()
+}
 
-pub mod lwma_diff;
-
-pub use blake_pow::{blake_difficulty, blake_difficulty_with_hash};
-pub use difficulty::{Difficulty, DifficultyAdjustment};
-pub use error::{DifficultyAdjustmentError, PowError};
-pub use median_timestamp::get_median_timestamp;
-pub use monero_rx::{monero_difficulty, monero_difficulty_with_hash, MoneroData};
-pub use proof_of_work::{PowAlgorithm, ProofOfWork};
-pub use target_difficulty::get_target_difficulty;
+pub fn create_node_hash(left: &Vec<u8>, right: &Vec<u8>) -> Vec<u8> {
+    let mut hasher = Keccak256::new();
+    hasher.update(&left);
+    hasher.update(&right);
+    let result = hasher.finalize();
+    result.as_slice().to_vec()
+}
