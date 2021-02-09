@@ -33,7 +33,7 @@ use std::{collections::HashMap, fmt, sync::Arc};
 use tari_comms::types::CommsPublicKey;
 use tari_core::transactions::{tari_amount::MicroTari, transaction::Transaction};
 use tari_service_framework::reply_channel::SenderService;
-use tokio::sync::broadcast;
+use tokio::{runtime::Handle, sync::broadcast};
 use tower::Service;
 
 /// API Request enum
@@ -65,7 +65,7 @@ pub enum TransactionServiceRequest {
     #[cfg(feature = "test_harness")]
     FinalizePendingInboundTransaction(TxId),
     #[cfg(feature = "test_harness")]
-    AcceptTestTransaction((TxId, MicroTari, CommsPublicKey)),
+    AcceptTestTransaction((TxId, MicroTari, CommsPublicKey, Handle)),
     #[cfg(feature = "test_harness")]
     MineTransaction(TxId),
     #[cfg(feature = "test_harness")]
@@ -108,7 +108,7 @@ impl fmt::Display for TransactionServiceRequest {
                 f.write_str(&format!("FinalizePendingInboundTransaction ({})", id))
             },
             #[cfg(feature = "test_harness")]
-            Self::AcceptTestTransaction((id, _, _)) => f.write_str(&format!("AcceptTestTransaction ({})", id)),
+            Self::AcceptTestTransaction((id, _, _, _)) => f.write_str(&format!("AcceptTestTransaction ({})", id)),
             #[cfg(feature = "test_harness")]
             Self::MineTransaction(id) => f.write_str(&format!("MineTransaction ({})", id)),
             #[cfg(feature = "test_harness")]
@@ -508,6 +508,7 @@ impl TransactionServiceHandle {
         tx_id: TxId,
         amount: MicroTari,
         source_public_key: CommsPublicKey,
+        handle: &Handle,
     ) -> Result<(), TransactionServiceError>
     {
         match self
@@ -516,6 +517,7 @@ impl TransactionServiceHandle {
                 tx_id,
                 amount,
                 source_public_key,
+                handle.clone(),
             )))
             .await??
         {
