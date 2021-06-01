@@ -62,7 +62,6 @@ payments and atomic swaps.
 
 $$
 \newcommand{\script}{\alpha} % utxo script
-\newcommand{\scripthash}{ \sigma }
 \newcommand{\input}{ \theta }
 \newcommand{\HU}{\mathrm{U}} % UTXO hash
 \newcommand{\cat}{\Vert}
@@ -170,7 +169,7 @@ that a transaction did not honour the redeem script.
 
 The assumptions that broadly equate scripting with range proofs in the above argument are:
 
-* The script (hash) must be committed to the blockchain.
+* The script must be committed to the blockchain.
 * The script must not be malleable in any way without invalidating the transaction. This restriction extends to all 
   participants, including the UTXO owner.
 * We must be able to prove that the UTXO originator provides the script hash and no-one else.
@@ -183,7 +182,7 @@ The next section discusses the specific proposals for achieving these requiremen
 
 At a high level, Tari script works as follows:
 
-* A commitment to the spending script is recorded in the transaction UTXO.
+* The spending script is recorded in the transaction UTXO.
 * UTXOs also define a new, _offset public key_.
 * After the script is executed, the execution stack must contain exactly one value that will be interpreted as a public key.
   One can prove ownership of a UTXO by demonstrating knowledge of both the commitment _blinding factor_, _and_ the _script key_.
@@ -263,7 +262,7 @@ Note that:
 * The UTXO has a positive value `v` like any normal UTXO. 
 * The script and the output features can no longer be changed by the miner or any other party. Once mined, the owner can
   also no longer change the script or output features without invalidating the meta data signature.
-* We don't provide the complete script on the output, just the script hash.
+* We provide the complete script on the output.
 
 ### Transaction input changes
 
@@ -292,7 +291,7 @@ pub struct TransactionInput {
     /// The serialised script
     script: Vec<u8>,
     /// The script input data, if any
-    input_data: Vec<u8>
+    input_data: Vec<u8>,
     /// Signature signing the script, input data, public script key and the homomorphic commitment of the TransactionInput with
     /// a combination of the homomorphic commitment private values (amount and blinding factor) and private script key.
     script_signature: CommitmentSignature,
@@ -328,9 +327,8 @@ s_{S1i} \cdot H + s_{S2i} \cdot G = R_{Si} + (C_i+K_{Si})e
  \tag{5}
 $$
 
-This signature ensures that only the owner can provide the input data to the TransactionInput and that the transaction's _script offset_ \\(\so\\) cannot be indirectly changed by changing the script private key \\(k\_Si\\).
+This signature ensures that only the owner can provide the input data to the TransactionInput and that the transaction's _script offset_ \\(\so\\) cannot be indirectly changed by changing the script private key \\(k\_{Si}\\).
 
-????
 This stops any attack that attempts to change the information inside of the challenge \\(e\\) where more than one possible input is valid such as with a `NOP` script. If an attacker can change the \\(K\_{Si}\\) keys of the input then he can take control of the \\(K\_{Oi}\\) as well allowing the attacker to change the metadata of the utxo including the script.
 
 ### Script Offset
@@ -339,7 +337,7 @@ For every transaction an accompanying script offset \\( \so \\) needs to be prov
 
 $$
 \begin{aligned}
-\so = \sum_j\mathrm{k_{Sj}} - \sum_i(\mathrm{k_{Oi}}) \\; \text{for each input}, j,\\, \text{and each output}, i
+\so = \sum_j\mathrm{k_{Sj}} - \sum_i\mathrm{k_{Oi}} \\; \text{for each input}, j,\\, \text{and each output}, i
  \end{aligned}
  \tag{6}
 $$
@@ -347,7 +345,7 @@ $$
 Verification of (6) will entail:
 $$
 \begin{aligned}
-\so \cdot G = \sum_j\mathrm{K_{Sj}} - \sum_i(\mathrm{K_{Oi}}) \\; \text{for each input}, j,\\, \text{and each output}, i
+\so \cdot G = \sum_j\mathrm{K_{Sj}} - \sum_i\mathrm{K_{Oi}} \\; \text{for each input}, j,\\, \text{and each output}, i
  \end{aligned}
  \tag{7}
 $$
@@ -376,7 +374,7 @@ $$
 
 $$
 \begin{aligned}
-\so_{total} \cdot G = \sum_j\mathrm{K_{Sj}} - \sum_i(\mathrm{K_{Oi}}) \\; \text{for each input}, j,\\, \text{and each output}, i
+\so_{total} \cdot G = \sum_j\mathrm{K_{Sj}} - \sum_i\mathrm{K_{Oi}} \\; \text{for each input}, j,\\, \text{and each output}, i
  \end{aligned}
  \tag{9}
 $$
@@ -395,36 +393,25 @@ pub struct BlockHeader {
 }
 ```
 
-This means that the no third party can remove any input or output from a transaction or the block as this will invalidate the _script offset_ balance equation (7) or (9). It is important to know that this also stops cut-through so that we can verify all spent UTXO scripts. Because the _private script key_ and _private script offset key_ is not publicly known its impossible to create a new _script offset_.
+This means that the no third party can remove any input or output from a transaction or the block as this will invalidate the _script offset_ balance equation (7) or (9) depending on whenever this is a transaction or block. It is important to know that this also stops cut-through so that we can verify all spent UTXO scripts. Because the _private script key_ and _private script offset key_ is not publicly known, its impossible to create a new _script offset_.
 
-Certain scripts may allow more than one valid set of _input data_. Users might be led to believe this will allow a third party to change the _script keypair_ (\\(k\_{Si}\\),\\(K\_{Si}\\)). See the [Script Offset security](#script-offset-security) as to why this is not possible.
-If equation (7) or (9) balances then we know that every included input and output has its correct _public script key_ and _public script offset key_, which in turn means we can trust and know that the supplied signatures (2),(3) are valid for all metadata.
-
+Certain scripts may allow more than one valid set of _input data_. Users might be led to believe that this will allow a third party to change the _script keypair_ (\\(k\_{Si}\\),\\(K\_{Si}\\)). See the [Script Offset security](#script-offset-security) as to why this is not possible.
+If equation (7) or (9) balances then we know that every included input and output has its correct _public script key_ and _public script offset key_, which in turn means we can trust and know that the supplied signatures (2),(3) are valid for all contained metadata.
 
 
 ### Consensus changes
 
 The Mimblewimble balance for blocks and transactions stays the same.
 
-Each new UTXO has a sender signature to be verified. This signature \\(s\_{Mi}\\) should be verified and this will prove that
-the original metadata was supplied.
-
-
-
-Currently, Tari, like vanilla Mimblewimble, has a transaction offset in each transaction instance, and an aggregate offset
-stored in the header of the block. To accommodate the _script offset_ we need to add a `script_offset` to transactions,
-and an aggregated `total_script_offset` to the header.
-
-
 In addition to the changes given above, there are consensus rule changes for transaction and block validation.
 
-For every valid block or transaction,
+For every valid transaction or block,
 
 1. Check the sender signature \\(s\_{Mi}\\) is valid for every output.
-2. The _script offset_ is valid for every block and transaction.
-3. The script executes successfully using the given input script data.
-4. The result of the _script_ is a valid public key, \\( K\_S \\).
-5. The script signature, \\( s\_{Si} \\) is valid for every input, has a valid signature for \\( K\_S \\) and message \\( \hash{ R\_S \cat \script \cat \input \cat h } \\).
+2. The script executes successfully using the given input script data.
+3. The result of the _script_ is a valid public key, \\( K\_S \\).
+4. The _script signature_, \\( s\_{Si} \\) is valid for every input.
+5. The _script offset_ is valid for every transaction and block.
 
 ## Examples
 
@@ -437,17 +424,14 @@ For this use case we have Alice who sends Bob some Tari.
 Bob's wallet is  online and is able to countersign the transaction.
 
 Alice creates a new transaction spending \\( C\_a \\) to a new output \\( C\_b \\) (ignoring fees for now).
-Because Alice is spending the transaction she chooses \\( \scripthash_b \\), she can either ask Bob for one, or choose something akin to a `NOP` script.
+Because Alice is spending the transaction she chooses the _script_ \\( \script_b \\), she can either ask Bob for one, or choose something akin to a `NOP` script.
 
 To spend \\( C\_a \\), she provides
 
-* A _script_, \\( \alpha_a \\) such that the script hash, \\( \scripthash_a = \hash{ \alpha_a }\\) matches the blockchain
-  record for the UTXO containing \\( C\_a \\).
+* An input matching \\( C\_a \\), some output already on the blockchain.
 * The script input, \\( \input_a \\).
-* The height, \\( h \\), that the UTXO matching \\( C_a \\) was mined.
-* A valid signature \\( (s_{Ca}, R_{Ca}) \\) proving that she knows the private key to the commitment \\(C_a\\) and that the supplied \\( K_{Sa} \\) was not changed.
-* A valid signature, \\( (s_{Sa}, R_{Sa}) \\) proving that she knows the private key, \\( k_{Sa} \\), corresponding to
-  \\( K_{Sa} \\), the public key left on the stack after executing \\( \script_a \\) with \\( \input_a \\).
+* A valid signature, \\( (s_{S1a}, s_{S2a}, R_{Sa}) \\) proving that she knows the private key, \\( k_{Sa} \\), corresponding to
+  \\( K_{Sa} \\), the public key left on the stack after executing \\( \script_a \\) with \\( \input_a \\) as well as the value and private blinding factor of the commitment //(C_a//).
 * An _offset public key_, \\( k_{Ob} \\).
 * The _script offset_, \\( \so\\) with:
 $$
@@ -459,13 +443,13 @@ $$
 * The sender signature \\( s_{Mb} \\) with: 
 $$
 \begin{aligned}
-  s_{Mb} = r_{mb} + k_{Ob} \hash{ \scripthash_b \cat F_b \cat R_{Mb} }
+  s_{Mb} = r_{mb} + k_{Ob} \hash{ \script_b \cat F_b \cat R_{Mb} }
    \end{aligned}
  \tag{11}
 $$
 
 Alice sends her excess, along with her signature nonce, as per the standard Mimblewimble protocol. However, she
-also provides Bob with \\( \so \\), the _script offset_, as wel as a meta_signature \\(s_{Mb}\\) for his output.
+also provides Bob with \\( \so \\), the _script offset_, as wel as a meta_signature \\(s_{Mb}\\) for his output \\(C_b\\).
 
 Bob can then complete his side of the transaction by completing the output:
 
@@ -489,28 +473,21 @@ Base nodes validate the transaction as follows:
   signature. This check does not change. Nor do the other validation rules, such as confirming that all inputs are in
   the UTXO set etc.
 * The sender signature \\(s_{Ma}\\) on Bob's output,
-* The _script signature_ on Alice's input is validated against the _script_ and _input_
-* The script hash must match the hash of the provided input script,
 * The input _script_ must execute successfully using the provided input data; and the script result must be a valid public key,
-  \\( K_{Sa} \\).
-* The _script offset_ is verified by checking that the balance
+* The _script signature_ on Alice's input is valid by checking:
+  $$
+\begin{aligned}
+    s_{S1a} \cdot H + s_{S2a} \cdot G = R_{Sa} + (C_a + K_{Sa})* \hash{ R_{Sa} \cat \alpha_a \cat \input_a \cat K_{Sa} \cat C_a}
+  \end{aligned}
+ \tag{13}
+  $$
+* The _script offset_ is verified by checking that the balance holds:
   $$
 \begin{aligned}
     \so \cdot{G} = K_{Sa} - K_{Ob}
   \end{aligned}
- \tag{13}
-  $$
-  holds.
-* The commitment signature \\(s_C{a}\\) on Alice's input by verifying that:
-  $$
-\begin{aligned}
-    s_{C1a} \cdot H + s_{C2a} \cdot G = R_{Ca} + C_a \hash{R_{Ca} \cat C_a \cat K_{Sa}}
-  \end{aligned}
  \tag{14}
   $$
-
-When the transaction is included in a block, the total offset for the block is validated, in an analogous fashion to how
-the excess offset is used.
 
 Finally, when Bob spends this output, he will use \\( K\_{Sb} \\) as his _script_ input and sign it with his private key
 \\( k\_{Sb} \\). He will choose a new \\( K\_{Oc} \\) to give to the recipient, and he will construct the _script offset_,
@@ -540,8 +517,8 @@ out-of-band, and might typically be Bob's wallet public key on the Tari network.
 
 Bob requires the value \\( v_b \\) and blinding factor \\( k_b \\) to claim his payment, but he needs to be able to claim it without asking Alice for them.
 
-This information can be obtained by using Diffie-Hellman and Bulletproof rewinding. If the blinding factor \\( k\_b \\) was calculated with Diffie-Hellman using the _offset public keypair_, (\\( k\_{Ob} \\),\\( K\_{Ob} \\)) as sender keypair and
-the keypair, (\\( k\_{Sb} \\),\\( K\_{Sb} \\)) as the receiver keypair, the blinding factor \\( k\_b \\) can be securely calculated without communication.
+This information can be obtained by using Diffie-Hellman and Bulletproof rewinding. If the blinding factor \\( k\_b \\) was calculated with Diffie-Hellman using the _offset keypair_, (\\( k\_{Ob} \\),\\( K\_{Ob} \\)) as the sender keypair and
+the _script keypair_, (\\( k\_{Sb} \\),\\( K\_{Sb} \\)) as the receiver keypair, the blinding factor \\( k\_b \\) can be securely calculated without communication.
 
 Alice uses Bob's public key to create a shared secret, \\( k\_b \\) for the output commitment, \\( C\_b \\), using
 Diffie-Hellman key exchange.
@@ -554,8 +531,7 @@ $$
  \tag{16}
 $$
 
-Next Alice next uses Bulletproof rewinding to encrypt the value \\( v_b \\) into the the Bulletproof for the commitment \\( C_b \\). For this she uses (\\( k_{rewind} =  Hash(k_{b}) \\) as the rewind_key and (\\( k_{blinding} =  Hash(Hash(k_{b})) \\) as the blinding key.
-*Note, deriving the keys here should be secure, but should be confirmed before mainnet.
+Next Alice next uses Bulletproof rewinding, see [RFC 180](RFC-0180_BulletproofRewinding.md), to encrypt the value \\( v_b \\) into the the Bulletproof for the commitment \\( C_b \\). For this she uses (\\( k_{rewind} =  \hash{k_{b}} \\) as the rewind_key and (\\( k_{blinding} =  \hash{\hash{k_{b}}} \\) as the blinding key.
 
 Alice knows the script-redeeming private key \\( k_{Sa}\\) for the transaction input.
 
@@ -569,17 +545,16 @@ $$
 $$
 
 For the script hash, she provides the hash of a script that locks the output to Bob's public key, `PushPubkey(K_Sb)`.
-This script will only resolve successfully if the sender can provide a valid signature as input that demonstrates proof
-of knowledge of \\( k_{Sb} \\) which only Bob knows.
+This will only be spendable if the sender can provide a valid signature as input that demonstrates proof
+of knowledge of \\( k_{Sb}\\) as well as the value and blinding factor of the output \\(C_b\\). Although Alice knowns the value and blinding factor of the output \\(C_b\\) only Bob knows \\( k_{Sb}\\).
 
 Any base node can now verify that the transaction is complete, verify the signature on the _script_, and verify the _script
 offset_.
 
 For Bob to claim his commitment he will scan the blockchain for a known script hash because he knowns that the _script_ will be `PushPubkey(K_Sb)` he can scan for that hash. In this case, the script hash is analogous to an address in Bitcoin or Monero. Bob's wallet can scan the blockchain
-looking for hashes that he would know how to resolve. For all outputs that he discovers this way, Bob would need to know
-who the sender is so that he can derive the shared secret.
+looking for hashes that he would know how to resolve.
 
-When Bob's wallet spots a known hash he requires he requires the blinding factor, \\( k_b \\) and the value \\( v_b \\). First he uses Diffie-Hellman to calculate \\( k_b \\). 
+When Bob's wallet spots a known script, he requires the blinding factor, \\( k_b \\) and the value \\( v_b \\). First he uses Diffie-Hellman to calculate \\( k_b \\). 
 
 Bob calculates \\( k_b \\) as
 $$
@@ -589,9 +564,9 @@ $$
  \tag{18}
 $$
 
-Next Bob's wallet calculates \\( k_{rewind} \\), using \\( k_{rewind} =  Hash(k_{b})\\) and (\\( k_{blinding} =  Hash(Hash(k_{b})) \\), using those to rewind the Bulletproof to get the value \\( v_b \\). 
+Next Bob's wallet calculates \\( k_{rewind} \\), using \\( k_{rewind} =  \hash{k_{b}}\\) and (\\( k_{blinding} =  \hash{\hash{k_{b}}} \\), using those to rewind the Bulletproof to get the value \\( v_b \\). 
 
-Because Bob's wallet already knowns the _script private key_ \\( k_Sb \\), he now knows all the values required to spend the commitment \\( C_b \\)
+Because Bob's wallet already knowns the _script private key_ \\( k_{Sb} \\), he now knows all the values required to spend the commitment \\( C_b \\)
 
 For Bob's part, when he discovers one-sided payments to himself, he should spend them to new outputs using a traditional
 transaction to thwart any potential horizon attacks in the future.
@@ -600,9 +575,9 @@ To summarise, the information required for one-sided transactions is as follows:
 
 | Transaction input | Symbols                               | Knowledge                                                       |
 |:----------------------|:--------------------------------------|:----------------------------------------------------------------|
-| commitment            | \\( C_a = k_a \cdot G + v \cdot H \\) | Alice knows spend key and value                                 |
+| commitment            | \\( C_a = k_a \cdot G + v \cdot H \\) | Alice knows the blinding factor and value                       |
 | features              | \\( F_a \\)                           | Public                                                          |
-| script                | \\( \alpha_a \\)                      | Public, can verify that \\( \hash{\alpha_a} = \scripthash_a \\) |
+| script                | \\( \alpha_a \\)                      | Public                                                          |
 | script input          | \\( \input_a \\)                      | Public                                                          |
 | height                | \\( h_a \\)                           | Public                                                          |
 | script signature      | \\( s_{S1a},s_{S2a}, R_{Sa} \\)       | Alice knows \\( k_{Sa},\\, r_{Sa} \\) and \\( k_{a},\\, v_{a} \\) of the commitment \\(C_a\\) |
@@ -610,9 +585,9 @@ To summarise, the information required for one-sided transactions is as follows:
 
 | Transaction output | Symbols                               | Knowledge                                                              |
 |:-------------------|:--------------------------------------|:-----------------------------------------------------------------------|
-| commitment         | \\( C_b = k_b \cdot G + v \cdot H \\) | Alice and Bob know the spend key and value                             |
+| commitment         | \\( C_b = k_b \cdot G + v \cdot H \\) | Alice and Bob know the blinding factor and value                       |
 | features           | \\( F_b \\)                           | Public                                                                 |
-| script hash        | \\( \scripthash_b \\)                 | Script is effectively public. Only Bob knows the correct script input. |
+| script             | \\( \script_b \\)                     | Script is public. Only Bob knows the correct script input. |
 | range proof        |                                       | Alice and Bob know opening parameters                                  |
 | offset public key  | \\( K_{Ob} \\)                        | Alice knows \\( k_{Ob} \\)                                             |
 | sender signature   | \\( s_{Mb}, R_{Mb} \\)                | Alice knows \\( k_{Ob} \\)  and the metadata)                          |
@@ -621,7 +596,7 @@ To summarise, the information required for one-sided transactions is as follows:
 ### HTLC-like script
 
 In this use case we have a script that controls where it can be spent. The script is out of scope for this example, but
-has applies the following rules:
+has the following rules:
 
 * Alice can spend the UTXO unilaterally after block _n_, **or**
 * Alice and Bob can spend it together.
@@ -641,13 +616,13 @@ Alice also generates the _offset keypair_, \\( (k_{Os}, K_{Os} )\\).
 
 Now Alice and Bob proceed with the standard transaction flow.
 
-Alice and Bob have to ensure that the _script offset public key_ \\( K_{Os}\\) is inside of the commitment \\( C_s\\).
+Alice ensures that the _script offset public key_ \\( K_{Os}\\) is inside of the commitment \\( C_s\\).
 Alice will fill in the _script_ with her \\( k_{Sa}\\) to unlock the commitment \\( C_a\\).
 Because Alice owns \\( C_a\\) she needs to construct \\( \so\\) with:
 
 $$
 \begin{aligned}
-\so = k_{Sa} - k_{Ob}
+\so = k_{Sa} - k_{Os}
   \end{aligned}
  \tag{19}
 $$
@@ -671,7 +646,7 @@ This involves the script being executed in such a way that the resulting public 
 Bob's individual script keys, \\( k_{SsA} \\) and \\( k_{SaB} \\).
 
 The script input needs to be signed by this aggregate key, and so Alice and Bob must each supply a partial signature following
-the usual Schnorr aggregate mechanics.
+the usual Schnorr aggregate mechanics, but one person needs to add in the signature of the blinding factor and value.
 
 In an analogous fashion, Alice and Bob also generate an aggregate \\( k_{Ox}\\) from their own \\( k_{Ox}\\)s.
 
@@ -719,9 +694,9 @@ To summarise, the information required for creating a multiparty UTXO is as foll
 
 | Transaction input | Symbols                               | Knowledge                                                       |
 |:----------------------|:--------------------------------------|:----------------------------------------------------------------|
-| commitment            | \\( C_a = k_a \cdot G + v \cdot H \\) | Alice knows spend key and value                                 |
+| commitment            | \\( C_a = k_a \cdot G + v \cdot H \\) | Alice knows the blinding factor and value                       |
 | features              | \\( F_a \\)                           | Public                                                          |
-| script                | \\( \alpha_a \\)                      | Public, can verify that \\( \hash{\alpha_a} = \scripthash_a \\) |
+| script                | \\( \alpha_a \\)                      | Public                                                          |
 | script input          | \\( \input_a \\)                      | Public                                                          |
 | height                | \\( h_a \\)                           | Public                                                          |
 | script signature      | \\( s_{S1a},s_{S2a}, R_{Sa} \\)       | Alice knows \\( k_{Sa},\\, r_{Sa} \\) and \\( k_{a},\\, v_{a} \\) of the commitment \\(C_a\\) |
@@ -729,23 +704,23 @@ To summarise, the information required for creating a multiparty UTXO is as foll
 
 | Transaction output | Symbols                               | Knowledge                                                                                       |
 |:-------------------|:--------------------------------------|:------------------------------------------------------------------------------------------------|
-| commitment         | \\( C_s = k_s \cdot G + v \cdot H \\) | Alice and Bob know the spend key and value                                                      |
+| commitment         | \\( C_s = k_s \cdot G + v \cdot H \\) | Alice and Bob know the blinding factor and value                                                      |
 | features           | \\( F_s \\)                           | Public                                                                                          |
-| script hash        | \\( \scripthash_s \\)                 | Script is effectively public. Alice and Bob only knows their part of the  correct script input. |
+| script        | \\( \script_s \\)                          | Script is public. Alice and Bob only knows their part of the  correct script input. |
 | range proof        |                                       | Alice and Bob know opening parameters                                                           |
 | offset public key  | \\( K_{Os} = K_{OsA} + K_{OsB}\\)     | Alice knows \\( k_{OsA} \\), Bob knows \\( k_{OsB} \\). Neither party knows \\( k_{Os} \\)      |
-| sender signature   | \\( s_{Ms} = s_{MsA} + s_{MsB}, R_{Ss} = R{SsA} + R_{SsB} \\)| Alice knows \\( s_{MsA}, R{SsA} \\), Bob knows \\( s_{MsB}, R{SsB} \\)|
+| sender signature   | \\( s_{Ms} = s_{MsA} + s_{MsB}, R_{Ss} = R{SsA} + R_{SsB} \\)| Alice knows \\( s_{MsA}, R_{SsA} \\), Bob knows \\( s_{MsB}, R_{SsB} \\)|
 
 When spending the multi-party input:
 
 | Transaction input | Symbols                               | Knowledge                                                                                                          |
 |:----------------------|:--------------------------------------|:-------------------------------------------------------------------------------------------------------------------|
-| commitment            | \\( C_s = k_s \cdot G + v \cdot H \\) | Alice and Bob know the spend key and value                                                                         |
+| commitment            | \\( C_s = k_s \cdot G + v_s \cdot H \\) | Alice and Bob know the blinding factor and value                                                                         |
 | features              | \\( F_s \\)                           | Public                                                                                                             |
-| script                | \\( \alpha_s \\)                      | Public, can verify that \\( \hash{\alpha_d} = \scripthash_d \\)                                                    |
+| script                | \\( \alpha_s \\)                      | Public                                           |
 | script input          | \\( \input_s \\)                      | Public                                                                                                             |
 | height                | \\( h_a \\)                           | Public                                                                                                             |
-| script signature      | \\( s_{S1s} ,s_{S2s , R_{Ss} \\)      | Alice knows \\( k_{SsA},\\, r_{SsA} \\), Bob knows \\( k_{SsB},\\, r_{SsB} \\). Both parties know \\( k_{s},\\, v_{s} \\). Neither party knows \\( k_{Ss}\\) |
+| script signature      | \\( s_{S1s} ,s_{S2s} , R_{Ss} \\)      | Alice knows \\( k_{SsA},\\, r_{SsA} \\), Bob knows \\( k_{SsB},\\, r_{SsB} \\). Both parties know \\( k_{s},\\, v_{s} \\). Neither party knows \\( k_{Ss}\\) |
 | offset public key     | \\( K_{Os} \\)                        | As above, Alice and Bob each know part of the offset key                                                           |
 
 
@@ -767,14 +742,14 @@ to produce the necessary script offset when attempting to perform cut-through on
 Cut-through is still possible if the original owner participates. For example Alice, pays Bob, who pays Carol.
 Cut-through can happen only if Alice and Carol negotiate a new transaction.
 
-This will ensure that the original owner is happy with the spending the transaction to a new party, e.g. she has verified
+This will ensure that the original owner is happy with the spending of the transaction to a new party, e.g. she has verified
 the spending conditions like a script.
 
 ### Script Offset security
 
 If all the inputs in a transaction or a block contain scripts such as just `NOP` or `CompareHeight` commands, then the hypothesis is that it is possible to recreate a false _script offset_. Lets show by example why this is not possible. 
 
-Alice has an output \\(C\_{a}\\) which contains a _script_ that only has a `NOP` command in it. This means that the _script_ will immediately exit on execution leaving the entire _input data_ on the stack. She sends this output to Bob, who creates an output \\(C\_{b}\\). Because of the script, Bob can change the _public script key_ contained in the _input data_. Bob can now use his own \\(k\_{Sa'}\\) as the _script private key_. He replaces the \\(K\_{Oa'}\\) with his own _script offset key_ allowing him to change the _script_ and generate a new signature as in (2). Bob cab now generate a new _script offset_ with \\(\so = k\_{Sa'} - k\_{Oa'} \\). Up to this point, it all seems valid. No one can detect that Bob changed the _script_.
+Alice has an output \\(C\_{a}\\) which contains a _script_ that only has a `NOP` command in it. This means that the _script_ will immediately exit on execution leaving the entire _input data_ on the stack. She sends this output to Bob, who creates an output \\(C\_{b}\\). Because of the script, Bob can change the _public script key_ contained in the _input data_. Bob can now use his own \\(k\_{Sa'}\\) as the _script private key_. He replaces the _script offset public key_ with his own \\(K\_{Oa'}\\) allowing him to change the _script_ and generate a new signature as in (2). Bob cab now generate a new _script offset_ with \\(\so' = k\_{Sa'} - k\_{Oa'} \\). Up to this point, it all seems valid. No one can detect that Bob changed the _script_.
 
 But what Bob also needs to do is generate the signature in (3). For this signature Bob needs to know \\(k\_{Sa}, k\_a, v\_a\\). Because Bob created a fake _script private key_, and there is no change in this transaction, he does know the _script private key_ and the value. But Bob does not know the blinding factor \\(k\_a\\) of Alice's commitment and thus cannot complete the signature in (3). Only the rightful owner of the commitment which in MimbleWimble terms is the  person who knows \\( k\_a, v\_a\\) can generate the signature in (3).
 
@@ -814,15 +789,12 @@ with the addition of the script, script signature, and a public key to every out
 
 These can eventually be pruned, but will increase storage and bandwidth requirements.
 
-Input size in a block will now be much bigger as each input was previously just a commitment and an output features.
+Input size of a block will now be much bigger as each input was previously just a commitment and output features.
 Each input now includes a script, input_data, the script signature and an extra public key. This could be compacted by
 just broadcasting input hashes along with the missing script input data and signature, instead of the full input in
 transaction messages, but this will still be larger than inputs are currently.
 
 Every header will also be bigger as it includes an extra blinding factor that will not be pruned away.
-
-The additional range proof validations and signature checks significantly hurt performance. Range proof checks are particularly
-expensive. To improve overall block validation, batch range proof validations should be employed to mitigate this expense.
 
 ### Fodder for chain analysis
 
@@ -839,19 +811,16 @@ The capital letter subscripts, _R_ and _S_ refer to a UTXO _receiver_ and _scrip
 | Symbol                  | Definition                                                                                                                         |
 |:------------------------|:-----------------------------------------------------------------------------------------------------------------------------------|
 | \\( \script_i \\)       | An output script for output _i_, serialised to binary                                                                              |
-| \\( h_i \\)             | Block height that UTXO \\(i\\) was previously mined.                                                                               |
-| \\(  \HU_i \\)          | The hash of the full UTXO _i_ _sans_ range proof.                                                                                  |
 | \\( F_i \\)             | Output features for UTXO _i_.                                                                                                      |
 | \\( f_t \\)             | transaction fee for transaction _t_.                                                                                               |
 | \\( m_t \\)             | metadata for transaction _t_. Currently this includes the lock height.                                                             |
-| \\( k_{Oi}\, K_{Oi} \\) | The private - public keypair for the UTXO offset key.                                                                              |
+| \\( k_{Oi}\, K_{Oi} \\) | The private - public keypair for the UTXO script offset key.                                                                              |
 | \\( k_{Si}\, K_{Si} \\) | The private - public keypair for the script key. The script, \\( \script_i \\) resolves to \\( K_S \\) after completing execution. |                   |
-| \\( \so_t \\)           | The script offset for transaction _t_. \\( \so_t = \sum_j{ k_{Sjt}} - \sum_j{k_{Ojt}\cdot\HU_i} \\)                               |
+| \\( \so_t \\)           | The script offset for transaction _t_. \\( \so_t = \sum_j{ k_{Sjt}} - \sum_i{k_{Oit}}\\)                               |
 | \\( C_i \\)             | A Pedersen commitment,  i.e. \\( k_i \cdot{G} + v_i \cdot H \\)                                                                    |
 | \\( \input_i \\)        | The serialised input for script \\( \script_i \\)                                                                                  |
-| \\( s_{Si} \\)          | A script signature for output \\( i \\). \\( s_{Si} = (s_{S1i}, s_{S2i}, R_{Si} ) = (r_{S1i} +  e(v_{i})), (r_{S2i} +  e(k_{Si}+k_i)\\; where \\; e = \hash{ R_{Si} \cat \script_i \cat \input_i \cat K_{Si} \cat C_i} \\) 
+| \\( s_{Si} \\)          | A script signature for output \\( i \\). \\( s_{Si} = (s_{S1i}, s_{S2i}, R_{Si} ) = (r_{S1i} +  e(v_{i})), (r_{S2i} +  e(k_{Si}+k_i))\\; where \\; e = \hash{ R_{Si} \cat \script_i \cat \input_i \cat K_{Si} \cat C_i} \\) 
 | \\( s_{Mi} \\)          | A sender signature for output \\( i \\). \\( s_{Mi} = r_{Mi} + k_{Oi}\hash{ \script_i \cat F_i \cat R_{Mi}  } \\)                    |
-| \\( s_{Ci} \\)          | A Commitment signature for output \\( i \\). \\( s_{Ci} = s_{C1i} + S_{C2i} = r_{C1i} + v_i \hash{R_{Ci} \cat C_i \cat K_{Si}} + r_{C2i} + k_i \hash{R_{Ci} \cat C_i \cat K_{Si}} \\)|
 
 ## Extensions
 
@@ -886,20 +855,3 @@ Thanks to David Burkett for proposing a method to prevent cut-through and willin
 [Handshake white paper]: https://handshake.org/files/handshake.txt
 [Signature on Commitment values]: https://documents.uow.edu.au/~wsusilo/ZCMS_IJNS08.pdf
 [Commitment Signature]: https://eprint.iacr.org/2020/061.pdf
-
-
-\begin{aligned}
- s_{Si} = (s_{S1i}, s_{S2i}, R_{Si} )
- \end{aligned}
- \tag{3}
-$$
-Where
-$$
-\begin{aligned}
-R_{Si} &= r_{S1i} \cdot H + r_{S2i} \cdot G \\\\
-s_{S1i}  &= r_{S1i} +  e(v_{i}) \\\\
-s_{S2i} &= r_{S2i} +  e(k_{Si}+k_i) \\\\
-e &=  \\\\
-\end{aligned}
-\tag{4}
-$$
