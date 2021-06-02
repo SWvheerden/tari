@@ -172,7 +172,7 @@ The assumptions that broadly equate scripting with range proofs in the above arg
 * The script must be committed to the blockchain.
 * The script must not be malleable in any way without invalidating the transaction. This restriction extends to all 
   participants, including the UTXO owner.
-* We must be able to prove that the UTXO originator provides the script hash and no-one else.
+* We must be able to prove that the UTXO originator provides the script and no-one else.
 * The scripts and their redeeming inputs must be stored on the block chain. In particular, the input data must not be
   malleable.
 
@@ -544,15 +544,15 @@ $$
  \tag{17}
 $$
 
-For the script hash, she provides the hash of a script that locks the output to Bob's public key, `PushPubkey(K_Sb)`.
+She also provides a script that locks the output to Bob's public key, `PushPubkey(K_Sb)`.
 This will only be spendable if the sender can provide a valid signature as input that demonstrates proof
 of knowledge of \\( k_{Sb}\\) as well as the value and blinding factor of the output \\(C_b\\). Although Alice knowns the value and blinding factor of the output \\(C_b\\) only Bob knows \\( k_{Sb}\\).
 
 Any base node can now verify that the transaction is complete, verify the signature on the _script_, and verify the _script
 offset_.
 
-For Bob to claim his commitment he will scan the blockchain for a known script hash because he knowns that the _script_ will be `PushPubkey(K_Sb)` he can scan for that hash. In this case, the script hash is analogous to an address in Bitcoin or Monero. Bob's wallet can scan the blockchain
-looking for hashes that he would know how to resolve.
+For Bob to claim his commitment he will scan the blockchain for a known script because he knowns that the _script_ will be `PushPubkey(K_Sb)`. In this case, the script is analogous to an address in Bitcoin or Monero. Bob's wallet can scan the blockchain
+looking for scripts that he would know how to resolve.
 
 When Bob's wallet spots a known script, he requires the blinding factor, \\( k_b \\) and the value \\( v_b \\). First he uses Diffie-Hellman to calculate \\( k_b \\). 
 
