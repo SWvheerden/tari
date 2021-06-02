@@ -747,9 +747,12 @@ the spending conditions like a script.
 
 ### Script Offset security
 
-If all the inputs in a transaction or a block contain scripts such as just `NOP` or `CompareHeight` commands, then the hypothesis is that it is possible to recreate a false _script offset_. Lets show by example why this is not possible. 
+If all the inputs in a transaction or a block contain scripts such as just `NOP` or `CompareHeight` commands, then the hypothesis is that it is possible to recreate a false _script offset_. Lets show by example why this is not possible. In this Example we have Alice who pays Bob with no change output:
+$$
+C_a \Rightarrow  C_b
+$$
 
-Alice has an output \\(C\_{a}\\) which contains a _script_ that only has a `NOP` command in it. This means that the _script_ will immediately exit on execution leaving the entire _input data_ on the stack. She sends this output to Bob, who creates an output \\(C\_{b}\\). Because of the script, Bob can change the _public script key_ contained in the _input data_. Bob can now use his own \\(k\_{Sa'}\\) as the _script private key_. He replaces the _script offset public key_ with his own \\(K\_{Oa'}\\) allowing him to change the _script_ and generate a new signature as in (2). Bob cab now generate a new _script offset_ with \\(\so' = k\_{Sa'} - k\_{Oa'} \\). Up to this point, it all seems valid. No one can detect that Bob changed the _script_.
+Alice has an output \\(C\_{a}\\) which contains a _script_ that only has a `NOP` command in it. This means that the _script_ \\( \script\_a \\) will immediately exit on execution leaving the entire _input data_ \\( \input\_a \\)on the stack. She sends all the required information to Bob, see the [standard mw transaction](#standard-mw-transaction), who creates an output \\(C\_{b}\\). Because of the script \\( \script\_a \\), Bob can change the _public script key_ \\( K\_{Sa}\\) contained in the _input data_. Bob can now use his own \\(k'\_{Sa}\\) as the _script private key_. He replaces the _script offset public key_ with his own \\(K'\_{Ob}\\) allowing him to change the _script_ \\( \script\_b \\) and generate a new signature as in (2). Bob cab now generate a new _script offset_ with \\(\so' = k'\_{Sa} - k'\_{Ob} \\). Up to this point, it all seems valid. No one can detect that Bob changed the _script_ \\( \script\_b \\).
 
 But what Bob also needs to do is generate the signature in (3). For this signature Bob needs to know \\(k\_{Sa}, k\_a, v\_a\\). Because Bob created a fake _script private key_, and there is no change in this transaction, he does know the _script private key_ and the value. But Bob does not know the blinding factor \\(k\_a\\) of Alice's commitment and thus cannot complete the signature in (3). Only the rightful owner of the commitment which in MimbleWimble terms is the  person who knows \\( k\_a, v\_a\\) can generate the signature in (3).
 
