@@ -146,7 +146,7 @@ fn verify_not_stxos<B: BlockchainBackend>(tx: &Transaction, db: &B) -> Result<()
                 target: LOG_TARGET,
                 "Transaction uses input: {} which does not exist yet", input
             );
-            not_found_input.push(input.hash);
+            not_found_input.push(input.hash());
         }
     }
     if !not_found_input.is_empty() {

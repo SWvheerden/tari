@@ -27,6 +27,7 @@ use crate::{
     transactions::transaction::TransactionError,
 };
 use thiserror::Error;
+use crate::transactions::types::HashOutput;
 
 #[derive(Debug, Error)]
 pub enum ValidationError {
@@ -37,7 +38,7 @@ pub enum ValidationError {
     #[error("Contains kernels or inputs that are not yet spendable")]
     MaturityError,
     #[error("Contains unknown inputs")]
-    UnknownInputs(Vec<Vec<u8>>),
+    UnknownInputs(Vec<HashOutput>),
     #[error("The transaction is invalid: {0}")]
     TransactionError(#[from] TransactionError),
     #[error("Error: {0}")]

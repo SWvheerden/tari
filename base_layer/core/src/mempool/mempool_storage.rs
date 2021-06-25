@@ -76,9 +76,9 @@ impl MempoolStorage {
                 self.unconfirmed_pool.insert(tx, None)?;
                 Ok(TxStorageResponse::UnconfirmedPool)
             },
-            Err(ValidationError::UnknownInputs(not_found_inputs)) => {
-                if self.unconfirmed_pool.does_all_outputs_exists(&not_found_inputs) {
-                    self.unconfirmed_pool.insert(tx, Some(not_found_inputs))?;
+            Err(ValidationError::UnknownInputs(dependent_outputs)) => {
+                if self.unconfirmed_pool.verify_outputs_exist(&dependent_outputs) {
+                    self.unconfirmed_pool.insert(tx, Some(dependent_outputs))?;
                     Ok(TxStorageResponse::UnconfirmedPool)
                 } else {
                     warn!(target: LOG_TARGET, "Validation failed due to unknown inputs");

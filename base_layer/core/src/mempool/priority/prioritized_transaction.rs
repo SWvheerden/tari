@@ -24,7 +24,7 @@ use crate::{
     mempool::priority::PriorityError,
     transactions::{transaction::Transaction, types::HashOutput},
 };
-use std::{convert::TryFrom, sync::Arc};
+use std::{sync::Arc};
 use tari_crypto::tari_utilities::message_format::MessageFormat;
 
 /// Create a unique unspent transaction priority based on the transaction fee, maturity of the oldest input UTXO and the
@@ -61,16 +61,16 @@ pub struct PrioritizedTransaction {
     pub transaction: Arc<Transaction>,
     pub priority: FeePriority,
     pub weight: u64,
-    pub depended_output_hashes: Vec<Vec<u8>>,
+    pub depended_output_hashes: Vec<HashOutput>,
 }
 
 impl PrioritizedTransaction {
     pub fn convert_to_transaction(
         transaction: Transaction,
-        required_inputs: Option<Vec<HashOutput>>,
+        dependent_outputs: Option<Vec<HashOutput>>,
     ) -> Result<PrioritizedTransaction, PriorityError> {
-        let depended_output_hashes = match required_inputs {
-            Ok(v) => v,
+        let depended_output_hashes = match dependent_outputs {
+            Some(v) => v,
             None => Vec::new(),
         };
         Ok(Self {

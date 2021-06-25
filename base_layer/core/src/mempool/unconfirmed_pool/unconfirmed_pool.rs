@@ -36,7 +36,6 @@ use log::*;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},
-    convert::TryFrom,
     sync::Arc,
 };
 use tari_crypto::tari_utilities::{hex::Hex, Hashable};
@@ -106,13 +105,13 @@ impl UnconfirmedPool {
     pub fn insert(
         &mut self,
         tx: Arc<Transaction>,
-        required_inputs: Option<Vec<HashOutput>>,
+        dependent_outputs: Option<Vec<HashOutput>>,
     ) -> Result<(), UnconfirmedPoolError> {
         let tx_key = tx
             .first_kernel_excess_sig()
             .ok_or(UnconfirmedPoolError::TransactionNoKernels)?;
         if !self.txs_by_signature.contains_key(tx_key) {
-            let prioritized_tx = PrioritizedTransaction::try_from((*tx).clone())?;
+            let prioritized_tx = PrioritizedTransaction::convert_to_transaction((*tx).clone(), dependent_outputs)?;
             if self.txs_by_signature.len() >= self.config.storage_capacity {
                 if prioritized_tx.priority < *self.lowest_priority() {
                     return Ok(());
@@ -122,11 +121,8 @@ impl UnconfirmedPool {
             self.txs_by_priority
                 .insert(prioritized_tx.priority.clone(), tx_key.clone());
             self.txs_by_signature.insert(tx_key.clone(), prioritized_tx);
-            for output in *tx.body.ouputs() {
-                self.txs_by_output
-                    .entry(output.hash())
-                    .or_default()
-                    .push(tx_key.clone());
+            for output in tx.body.outputs().clone() {
+                self.txs_by_output.entry(output.hash()).or_default().push(tx_key.clone());
             }
             debug!(
                 target: LOG_TARGET,
@@ -139,7 +135,7 @@ impl UnconfirmedPool {
         Ok(())
     }
 
-    pub fn does_all_outputs_exists(&mut self, outputs: &Vec<HashOutput>) -> bool {
+    pub fn verify_outputs_exist(&mut self, outputs: &[HashOutput]) -> bool {
         for hash in outputs {
             if !self.txs_by_output.contains_key(hash) {
                 return false;
@@ -152,7 +148,7 @@ impl UnconfirmedPool {
     #[cfg(test)]
     pub fn insert_txs(&mut self, txs: Vec<Arc<Transaction>>) -> Result<(), UnconfirmedPoolError> {
         for tx in txs.into_iter() {
-            self.insert(tx, none)?;
+            self.insert(tx, None)?;
         }
         Ok(())
     }
@@ -194,7 +190,7 @@ impl UnconfirmedPool {
         for transaction in array_of_tx {
             for input in transaction.body.inputs() {
                 for tx_input in tx.body.inputs() {
-                    if tx_input.commitment == input.commitment {
+                    if tx_input.hash() == input.hash() {
                         return true;
                     }
                 }
@@ -214,29 +210,6 @@ impl UnconfirmedPool {
         self.txs_by_output.clear();
 
         mempool_txs
-    }
-
-    // Helper function to ensure that all transactions are safely deleted in order and from all storage
-    fn delete_transaction(&mut self, signature: &Signature) -> Option<Arc<Transaction>> {
-        if let Some(prioritized_transaction) = self.txs_by_signature.remove(signature) {
-            self.txs_by_priority.remove(&prioritized_transaction.priority);
-            for output in *(prioritized_transaction.transaction).ouputs() {
-                let key = output.hash();
-                if let Some(mut signatures) = self.txs_by_output.get_mut(&key) {
-                    signatures.retain(|x| x != signature);
-                    if signatures.is_empty() {
-                        self.txs_by_output.remove(&key);
-                    }
-                }
-            }
-            trace!(
-                target: LOG_TARGET,
-                "Deleted transaction: {}",
-                &prioritized_transaction.transaction
-            );
-            return Some(prioritized_transaction.transaction);
-        }
-        None
     }
 
     /// Remove all published transactions from the UnconfirmedPoolStorage and discard deprecated transactions
@@ -267,14 +240,20 @@ impl UnconfirmedPool {
 
     // Remove all deprecated transactions from the UnconfirmedPool by scanning inputs and outputs.
     fn remove_deprecated_transactions(&mut self, published_block: &Block) -> Vec<Arc<Transaction>> {
+        let mut removed_transactions = Vec::new();
         let mut transaction_keys_to_remove = Vec::new();
         for (tx_key, ptx) in self.txs_by_signature.iter() {
+            let mut removed = false;
             for input in ptx.transaction.body.inputs() {
                 for published_input in published_block.body.inputs() {
                   if published_input.hash() == input.hash() {
                         transaction_keys_to_remove.push(tx_key.clone());
+                        removed = true;
                     }
                 }
+            }
+            if removed {
+                removed_transactions.push(ptx.transaction.clone());
             }
         }
         published_block.body.outputs().iter().for_each(|output| {
@@ -284,10 +263,6 @@ impl UnconfirmedPool {
                 }
             }
         });
-
-
-
-
         for tx_key in transaction_keys_to_remove {
             debug!(
                 target: LOG_TARGET,
@@ -296,10 +271,34 @@ impl UnconfirmedPool {
             );
             self.delete_transaction(&tx_key);
         }
+        removed_transactions
+    }
+
+    // Helper function to ensure that all transactions are safely deleted in order and from all storage
+    fn delete_transaction(&mut self, signature: &Signature) -> Option<Arc<Transaction>> {
+        if let Some(prioritized_transaction) = self.txs_by_signature.remove(signature) {
+            self.txs_by_priority.remove(&prioritized_transaction.priority);
+            for output in prioritized_transaction.transaction.as_ref().body.outputs() {
+                let key = output.hash();
+                if let Some(signatures) = self.txs_by_output.get_mut(&key) {
+                    signatures.retain(|x| x != signature);
+                    if signatures.is_empty() {
+                        self.txs_by_output.remove(&key);
+                    }
+                }
+            }
+            trace!(
+                target: LOG_TARGET,
+                "Deleted transaction: {}",
+                &prioritized_transaction.transaction
+            );
+            return Some(prioritized_transaction.transaction);
+        }
+        None
     }
 
     /// Remove all unconfirmed transactions that have become time locked. This can happen when the chain height was
-    /// reduced on some reorgs.
+        /// reduced on some reorgs.
     pub fn remove_timelocked(&mut self, tip_height: u64) -> Vec<Arc<Transaction>> {
         let mut removed_tx_keys: Vec<Signature> = Vec::new();
         for (tx_key, ptx) in self.txs_by_signature.iter() {
@@ -307,10 +306,10 @@ impl UnconfirmedPool {
                 self.txs_by_priority.remove(&ptx.priority);
                 removed_tx_keys.push(tx_key.clone());
             }
-            for output in *(ptx.transaction).ouputs() {
+            for output in ptx.transaction.as_ref().body.outputs() {
                 let key = output.hash();
-                if let Some(mut signatures) = self.txs_by_output.get_mut(&key) {
-                    signatures.retain(|x| *x != tx_key);
+                if let Some(signatures) = self.txs_by_output.get_mut(&key) {
+                    signatures.retain(|x| x != tx_key);
                     if signatures.is_empty() {
                         self.txs_by_output.remove(&key);
                     }
@@ -574,5 +573,73 @@ mod test {
         assert!(!unconfirmed_pool.has_tx_with_excess_sig(&tx6.body.kernels()[0].excess_sig),);
 
         assert!(unconfirmed_pool.check_status());
+    }
+
+    #[test]
+    fn test_multiple_transactions_with_same_outputs_in_mempool() {
+        let (tx1, _, _) = tx!(MicroTari(150_000), fee: MicroTari(50), inputs:5, outputs:5);
+        let (tx2, _, _) = tx!(MicroTari(250_000), fee: MicroTari(50), inputs:5, outputs:5);
+
+        // Create transactions with duplicate kernels (will not pass internal validation, but that is ok)
+        let mut tx3 = tx1.clone();
+        let mut tx4 = tx2.clone();
+        let (tx5, _, _) = tx!(MicroTari(350_000), fee: MicroTari(50), inputs:5, outputs:5);
+        let (tx6, _, _) = tx!(MicroTari(450_000), fee: MicroTari(50), inputs:5, outputs:5);
+        tx3.body.set_kernel(tx5.body.kernels()[0].clone());
+        tx4.body.set_kernel(tx6.body.kernels()[0].clone());
+
+        // Insert multiple transactions with the same outputs into the mempool
+        let mut unconfirmed_pool = UnconfirmedPool::new(UnconfirmedPoolConfig {
+            storage_capacity: 10,
+            weight_tx_skip_count: 3,
+        });
+        let txns = vec![
+            Arc::new(tx1.clone()),
+            Arc::new(tx2.clone()),
+            // Transactions with duplicate outputs
+            Arc::new(tx3.clone()),
+            Arc::new(tx4.clone()),
+        ];
+        unconfirmed_pool
+            .insert_txs(txns.clone())
+            .unwrap();
+
+        for txn in txns {
+            for output in txn.as_ref().body.outputs() {
+                assert!(unconfirmed_pool.verify_outputs_exist(&vec!(output.hash())));
+                let signatures_by_output  = unconfirmed_pool.txs_by_output.get(&output.hash()).unwrap();
+                // Each output must be referenced by two transactions
+                assert_eq!(signatures_by_output.len(), 2);
+                // Verify kernel signature present at least once
+                let mut found = 0u8;
+                for signature in signatures_by_output {
+                    if signature == &txn.as_ref().body.kernels()[0].excess_sig {
+                        found += 1;
+                    }
+                }
+                assert_eq!(found, 1);
+            }
+        }
+
+        // Remove some transactions
+        unconfirmed_pool.delete_transaction(&tx1.body.kernels()[0].excess_sig);
+        unconfirmed_pool.delete_transaction(&tx4.body.kernels()[0].excess_sig);
+
+        let txns = vec![
+            Arc::new(tx2),
+            // Transactions with duplicate outputs
+            Arc::new(tx3),
+        ];
+        for txn in txns {
+            for output in txn.as_ref().body.outputs() {
+                let signatures_by_output  = unconfirmed_pool.txs_by_output.get(&output.hash()).unwrap();
+                // Each output must be referenced by one transactions
+                assert_eq!(signatures_by_output.len(), 1);
+                // Verify kernel signature present exactly once
+                for signature in signatures_by_output {
+                    assert_eq!(signature, &txn.as_ref().body.kernels()[0].excess_sig);
+                }
+            }
+        }
     }
 }
