@@ -20,7 +20,10 @@
 //  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 //  USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use crate::{mempool::priority::PriorityError, transactions::transaction::Transaction};
+use crate::{
+    mempool::priority::PriorityError,
+    transactions::{transaction::Transaction, types::HashOutput},
+};
 use std::{convert::TryFrom, sync::Arc};
 use tari_crypto::tari_utilities::message_format::MessageFormat;
 
@@ -58,16 +61,23 @@ pub struct PrioritizedTransaction {
     pub transaction: Arc<Transaction>,
     pub priority: FeePriority,
     pub weight: u64,
+    pub depended_output_hashes: Vec<Vec<u8>>,
 }
 
-impl TryFrom<Transaction> for PrioritizedTransaction {
-    type Error = PriorityError;
-
-    fn try_from(transaction: Transaction) -> Result<Self, Self::Error> {
+impl PrioritizedTransaction {
+    pub fn convert_to_transaction(
+        transaction: Transaction,
+        required_inputs: Option<Vec<HashOutput>>,
+    ) -> Result<PrioritizedTransaction, PriorityError> {
+        let depended_output_hashes = match required_inputs {
+            Ok(v) => v,
+            None => Vec::new(),
+        };
         Ok(Self {
             priority: FeePriority::try_from(&transaction)?,
             weight: transaction.calculate_weight(),
             transaction: Arc::new(transaction),
+            depended_output_hashes,
         })
     }
 }

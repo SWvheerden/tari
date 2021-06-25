@@ -73,12 +73,17 @@ impl MempoolStorage {
         );
         match self.validator.validate(&tx) {
             Ok(()) => {
-                self.unconfirmed_pool.insert(tx)?;
+                self.unconfirmed_pool.insert(tx, None)?;
                 Ok(TxStorageResponse::UnconfirmedPool)
             },
-            Err(ValidationError::UnknownInputs) => {
-                warn!(target: LOG_TARGET, "Validation failed due to unknown inputs");
-                Ok(TxStorageResponse::NotStoredOrphan)
+            Err(ValidationError::UnknownInputs(not_found_inputs)) => {
+                if self.unconfirmed_pool.does_all_outputs_exists(&not_found_inputs) {
+                    self.unconfirmed_pool.insert(tx, Some(not_found_inputs))?;
+                    Ok(TxStorageResponse::UnconfirmedPool)
+                } else {
+                    warn!(target: LOG_TARGET, "Validation failed due to unknown inputs");
+                    Ok(TxStorageResponse::NotStoredOrphan)
+                }
             },
             Err(ValidationError::ContainsSTxO) => {
                 warn!(target: LOG_TARGET, "Validation failed due to already spent output");

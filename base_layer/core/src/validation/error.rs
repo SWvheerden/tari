@@ -37,7 +37,7 @@ pub enum ValidationError {
     #[error("Contains kernels or inputs that are not yet spendable")]
     MaturityError,
     #[error("Contains unknown inputs")]
-    UnknownInputs,
+    UnknownInputs(Vec<Vec<u8>>),
     #[error("The transaction is invalid: {0}")]
     TransactionError(#[from] TransactionError),
     #[error("Error: {0}")]

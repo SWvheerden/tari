@@ -116,7 +116,7 @@ fn verify_timelocks(tx: &Transaction, current_height: u64) -> Result<(), Validat
     Ok(())
 }
 
-// This function checks that the inputs and outputs do not exist in the STxO set.
+// This function checks that the inputs exists in the UTXO set but do not exist in the STXO set.
 fn verify_not_stxos<B: BlockchainBackend>(tx: &Transaction, db: &B) -> Result<(), ValidationError> {
     // `ChainMetadata::best_block` must always have the hash of the tip block.
     // NOTE: the backend makes no guarantee that the tip header has a corresponding full body (interrupted header sync,
@@ -131,30 +131,26 @@ fn verify_not_stxos<B: BlockchainBackend>(tx: &Transaction, db: &B) -> Result<()
                 metadata.best_block().to_hex()
             )
         });
+    let mut not_found_input = Vec::new();
     for input in tx.body.inputs() {
         if let Some((_, index, _height)) = db.fetch_output(&input.hash())? {
             if data.deleted().contains(index) {
                 warn!(
                     target: LOG_TARGET,
-                    "Block validation failed due to already spent input: {}", input
+                    "Transaction validation failed due to already spent input: {}", input
                 );
                 return Err(ValidationError::ContainsSTxO);
             }
-        // TODO Do we keep the height validation?
-        // if height != input.height {
-        //     warn!(
-        //         target: LOG_TARGET,
-        //         "Block validation failed due to input not having correct mined height({}): {}", height, input
-        //     );
-        //     return Err(ValidationError::InvalidMinedHeight);
-        // }
         } else {
             warn!(
                 target: LOG_TARGET,
-                "Transaction validation failed because the block has invalid input: {} which does not exist", input
+                "Transaction uses input: {} which does not exist yet", input
             );
-            return Err(ValidationError::UnknownInputs);
+            not_found_input.push(input.hash);
         }
+    }
+    if !not_found_input.is_empty() {
+        return Err(ValidationError::UnknownInputs(not_found_input));
     }
 
     Ok(())

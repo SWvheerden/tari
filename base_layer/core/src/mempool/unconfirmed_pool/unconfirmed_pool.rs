@@ -13,7 +13,7 @@
 //  products derived from this software without specific prior written permission.
 //
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
-//  INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+//  INCLUDING, BUT NOT LIMITED TO,  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
 //  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
 //  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
 //  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
@@ -27,7 +27,10 @@ use crate::{
         priority::{FeePriority, PrioritizedTransaction},
         unconfirmed_pool::UnconfirmedPoolError,
     },
-    transactions::{transaction::Transaction, types::Signature},
+    transactions::{
+        transaction::Transaction,
+        types::{HashOutput, Signature},
+    },
 };
 use log::*;
 use serde::{Deserialize, Serialize};
@@ -71,6 +74,7 @@ pub struct UnconfirmedPool {
     config: UnconfirmedPoolConfig,
     txs_by_signature: HashMap<Signature, PrioritizedTransaction>,
     txs_by_priority: BTreeMap<FeePriority, Signature>,
+    txs_by_output: HashMap<HashOutput, Vec<Signature>>,
 }
 
 impl UnconfirmedPool {
@@ -80,6 +84,7 @@ impl UnconfirmedPool {
             config,
             txs_by_signature: HashMap::new(),
             txs_by_priority: BTreeMap::new(),
+            txs_by_output: HashMap::new(),
         }
     }
 
@@ -98,7 +103,11 @@ impl UnconfirmedPool {
     /// higher priority transactions. The lowest priority transactions will be removed when the maximum capacity is
     /// reached and the new transaction has a higher priority than the currently stored lowest priority transaction.
     #[allow(clippy::map_entry)]
-    pub fn insert(&mut self, tx: Arc<Transaction>) -> Result<(), UnconfirmedPoolError> {
+    pub fn insert(
+        &mut self,
+        tx: Arc<Transaction>,
+        required_inputs: Option<Vec<HashOutput>>,
+    ) -> Result<(), UnconfirmedPoolError> {
         let tx_key = tx
             .first_kernel_excess_sig()
             .ok_or(UnconfirmedPoolError::TransactionNoKernels)?;
@@ -113,21 +122,37 @@ impl UnconfirmedPool {
             self.txs_by_priority
                 .insert(prioritized_tx.priority.clone(), tx_key.clone());
             self.txs_by_signature.insert(tx_key.clone(), prioritized_tx);
+            for output in *tx.body.ouputs() {
+                self.txs_by_output
+                    .entry(output.hash())
+                    .or_default()
+                    .push(tx_key.clone());
+            }
             debug!(
                 target: LOG_TARGET,
                 "Inserted transaction with signature {} into unconfirmed pool:",
                 tx_key.get_signature().to_hex()
             );
+
             trace!(target: LOG_TARGET, "{}", tx);
         }
         Ok(())
+    }
+
+    pub fn does_all_outputs_exists(&mut self, outputs: &Vec<HashOutput>) -> bool {
+        for hash in outputs {
+            if !self.txs_by_output.contains_key(hash) {
+                return false;
+            }
+        }
+        true
     }
 
     /// Insert a set of new transactions into the UnconfirmedPool
     #[cfg(test)]
     pub fn insert_txs(&mut self, txs: Vec<Arc<Transaction>>) -> Result<(), UnconfirmedPoolError> {
         for tx in txs.into_iter() {
-            self.insert(tx)?;
+            self.insert(tx, none)?;
         }
         Ok(())
     }
@@ -186,62 +211,91 @@ impl UnconfirmedPool {
             .map(|(_key, val)| val.transaction)
             .collect();
         self.txs_by_priority.clear();
+        self.txs_by_output.clear();
 
         mempool_txs
     }
 
-    /// Remove all published transactions from the UnconfirmedPool and discard all double spend transactions.
-    fn discard_double_spends(&mut self, published_block: &Block) {
-        let mut removed_tx_keys = Vec::new();
+    // Helper function to ensure that all transactions are safely deleted in order and from all storage
+    fn delete_transaction(&mut self, signature: &Signature) -> Option<Arc<Transaction>> {
+        if let Some(prioritized_transaction) = self.txs_by_signature.remove(signature) {
+            self.txs_by_priority.remove(&prioritized_transaction.priority);
+            for output in *(prioritized_transaction.transaction).ouputs() {
+                let key = output.hash();
+                if let Some(mut signatures) = self.txs_by_output.get_mut(&key) {
+                    signatures.retain(|x| x != signature);
+                    if signatures.is_empty() {
+                        self.txs_by_output.remove(&key);
+                    }
+                }
+            }
+            trace!(
+                target: LOG_TARGET,
+                "Deleted transaction: {}",
+                &prioritized_transaction.transaction
+            );
+            return Some(prioritized_transaction.transaction);
+        }
+        None
+    }
+
+    /// Remove all published transactions from the UnconfirmedPoolStorage and discard deprecated transactions
+    pub fn remove_published_and_discard_double_spends(&mut self, published_block: &Block) -> Vec<Arc<Transaction>> {
+        trace!(
+            target: LOG_TARGET,
+            "Searching for transactions to remove from unconfirmed pool in block {} ({})",
+            published_block.header.height,
+            published_block.header.hash().to_hex(),
+        );
+        let mut removed_transactions = Vec::new();
+
+        published_block.body.kernels().iter().for_each(|kernel| {
+            debug!(
+                target: LOG_TARGET,
+                "Removing transaction with key {} from unconfirmed pool",
+                kernel.excess_sig.get_signature().to_hex()
+            );
+            if let Some(transaction) = self.delete_transaction(&kernel.excess_sig) {
+                removed_transactions.push(transaction);
+            }
+        });
+        //remove all other deprecated transactions
+        removed_transactions.append(&mut self.remove_deprecated_transactions(published_block));
+
+        removed_transactions
+    }
+
+    // Remove all deprecated transactions from the UnconfirmedPool by scanning inputs and outputs.
+    fn remove_deprecated_transactions(&mut self, published_block: &Block) -> Vec<Arc<Transaction>> {
+        let mut transaction_keys_to_remove = Vec::new();
         for (tx_key, ptx) in self.txs_by_signature.iter() {
             for input in ptx.transaction.body.inputs() {
                 for published_input in published_block.body.inputs() {
-                    if published_input.commitment == input.commitment {
-                        self.txs_by_priority.remove(&ptx.priority);
-                        debug!(
-                            target: LOG_TARGET,
-                            "Removed double spend tx with key {} from unconfirmed pool",
-                            tx_key.get_signature().to_hex()
-                        );
-                        trace!(target: LOG_TARGET, "{}", &ptx.transaction);
-                        removed_tx_keys.push(tx_key.clone());
+                  if published_input.hash() == input.hash() {
+                        transaction_keys_to_remove.push(tx_key.clone());
                     }
                 }
             }
         }
-
-        for tx_key in &removed_tx_keys {
-            self.txs_by_signature.remove(&tx_key);
-        }
-    }
-
-    /// Remove all published transactions from the UnconfirmedPoolStorage and discard double spends
-    pub fn remove_published_and_discard_double_spends(&mut self, published_block: &Block) -> Vec<Arc<Transaction>> {
-        trace!(
-            target: LOG_TARGET,
-            "Searching for txns to remove from unconfirmed pool in block {} ({})",
-            published_block.header.height,
-            published_block.header.hash().to_hex(),
-        );
-        let mut removed_txs = Vec::new();
-        published_block.body.kernels().iter().for_each(|kernel| {
-            if let Some(ptx) = self.txs_by_signature.get(&kernel.excess_sig) {
-                self.txs_by_priority.remove(&ptx.priority);
-                if let Some(ptx) = self.txs_by_signature.remove(&kernel.excess_sig) {
-                    debug!(
-                        target: LOG_TARGET,
-                        "Removed tx with key {} from unconfirmed pool",
-                        kernel.excess_sig.get_signature().to_hex()
-                    );
-                    trace!(target: LOG_TARGET, "{}", &ptx.transaction);
-                    removed_txs.push(ptx.transaction);
+        published_block.body.outputs().iter().for_each(|output| {
+            if let Some(signatures) = self.txs_by_output.get(&output.hash()) {
+                for signature in signatures {
+                    transaction_keys_to_remove.push(signature.clone())
                 }
             }
         });
-        // First remove published transactions before discarding double spends
-        self.discard_double_spends(published_block);
 
-        removed_txs
+
+
+
+        for tx_key in transaction_keys_to_remove {
+            debug!(
+                target: LOG_TARGET,
+                "Removing transaction containing duplicated commitments with key {} from unconfirmed pool",
+                tx_key.get_signature().to_hex()
+            );
+            self.delete_transaction(&tx_key);
+        }
     }
 
     /// Remove all unconfirmed transactions that have become time locked. This can happen when the chain height was
@@ -252,6 +306,15 @@ impl UnconfirmedPool {
             if ptx.transaction.min_spendable_height() > tip_height + 1 {
                 self.txs_by_priority.remove(&ptx.priority);
                 removed_tx_keys.push(tx_key.clone());
+            }
+            for output in *(ptx.transaction).ouputs() {
+                let key = output.hash();
+                if let Some(mut signatures) = self.txs_by_output.get_mut(&key) {
+                    signatures.retain(|x| *x != tx_key);
+                    if signatures.is_empty() {
+                        self.txs_by_output.remove(&key);
+                    }
+                }
             }
         }
         let mut removed_txs: Vec<Arc<Transaction>> = Vec::new();
