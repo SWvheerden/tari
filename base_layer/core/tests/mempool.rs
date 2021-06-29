@@ -335,6 +335,200 @@ fn test_retrieve() {
 
 #[test]
 #[allow(clippy::identity_op)]
+fn test_zero_conf() {
+    let network = Network::LocalNet;
+    let (mut store, mut blocks, mut outputs, consensus_manager) = create_new_blockchain(network);
+    let mempool_validator = TxInputAndMaturityValidator::new(store.clone());
+    let mempool = Mempool::new(MempoolConfig::default(), Arc::new(mempool_validator));
+    let txs = vec![txn_schema!(
+        from: vec![outputs[0][0].clone()],
+        to: vec![10 * T, 10 * T, 10 * T, 10 * T]
+    )];
+    // "Mine" Block 1
+    generate_new_block(&mut store, &mut blocks, &mut outputs, txs, &consensus_manager).unwrap();
+    mempool.process_published_block(blocks[1].to_arc_block()).unwrap();
+
+    // Create 4 original transactions, only submit 2
+    let (tx01, tx01_out, _) = spend_utxos(
+        txn_schema!(from: vec![outputs[1][0].clone()], to: vec![8 * T], fee: 10*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx02, tx02_out, _) = spend_utxos(
+        txn_schema!(from: vec![outputs[1][1].clone()], to: vec![8 * T], fee: 20*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx03, tx03_out, _) = spend_utxos(
+        txn_schema!(from: vec![outputs[1][2].clone()], to: vec![8 * T], fee: 30*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx04, tx04_out, _) = spend_utxos(
+        txn_schema!(from: vec![outputs[1][3].clone()], to: vec![8 * T], fee: 40*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx01.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx03.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    let retrieved_txs = mempool.retrieve(u64::MAX).unwrap();
+    assert_eq!(retrieved_txs.len(), 2);
+    // Create 4 zero-conf level 1 transactions, try to submit all
+    let (tx11, tx11_out, _) = spend_utxos(
+        txn_schema!(from: tx01_out, to: vec![6 * T], fee: 50*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx12, tx12_out, _) = spend_utxos(
+        txn_schema!(from: tx02_out, to: vec![6 * T], fee: 60*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx13, tx13_out, _) = spend_utxos(
+        txn_schema!(from: tx03_out, to: vec![6 * T], fee: 70*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx14, tx14_out, _) = spend_utxos(
+        txn_schema!(from: tx04_out, to: vec![6 * T], fee: 80*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx11.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx12.clone())).unwrap(),
+        TxStorageResponse::NotStoredOrphan
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx13.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx14.clone())).unwrap(),
+        TxStorageResponse::NotStoredOrphan
+    );
+    let retrieved_txs = mempool.retrieve(u64::MAX).unwrap();
+    assert_eq!(retrieved_txs.len(), 4);
+    // Create 4 zero-conf level 2 transactions, try to submit all
+    let (tx21, tx21_out, _) = spend_utxos(
+        txn_schema!(from: tx11_out, to: vec![4 * T], fee: 90*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx22, tx22_out, _) = spend_utxos(
+        txn_schema!(from: tx12_out, to: vec![4 * T], fee: 100*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx23, tx23_out, _) = spend_utxos(
+        txn_schema!(from: tx13_out, to: vec![4 * T], fee: 110*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx24, tx24_out, _) = spend_utxos(
+        txn_schema!(from: tx14_out, to: vec![4 * T], fee: 120*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    ); // zero-conf level 3
+    assert_eq!(
+        mempool.insert(Arc::new(tx21.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx22.clone())).unwrap(),
+        TxStorageResponse::NotStoredOrphan
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx23.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx24.clone())).unwrap(),
+        TxStorageResponse::NotStoredOrphan
+    );
+    let retrieved_txs = mempool.retrieve(u64::MAX).unwrap();
+    assert_eq!(retrieved_txs.len(), 6);
+    // Create 4 zero-conf level 3 transactions, try to submit all
+    let (tx31, _, _) = spend_utxos(
+        txn_schema!(from: tx21_out, to: vec![2 * T], fee: 130*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx32, _, _) = spend_utxos(
+        txn_schema!(from: tx22_out, to: vec![2 * T], fee: 140*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx33, _, _) = spend_utxos(
+        txn_schema!(from: tx23_out, to: vec![2 * T], fee: 150*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx34, _, _) = spend_utxos(
+        txn_schema!(from: tx24_out, to: vec![2 * T], fee: 160*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx31.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx32.clone())).unwrap(),
+        TxStorageResponse::NotStoredOrphan
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx33.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx34.clone())).unwrap(),
+        TxStorageResponse::NotStoredOrphan
+    );
+    let retrieved_txs = mempool.retrieve(u64::MAX).unwrap();
+    assert_eq!(retrieved_txs.len(), 8);
+    // Submit the missing original transactions
+    assert_eq!(
+        mempool.insert(Arc::new(tx02.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx04.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    let retrieved_txs = mempool.retrieve(u64::MAX).unwrap();
+    assert_eq!(retrieved_txs.len(), 10);
+    // Re-submit failed zero-conf level 1 transactions
+    assert_eq!(
+        mempool.insert(Arc::new(tx12.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx14.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    let retrieved_txs = mempool.retrieve(u64::MAX).unwrap();
+    assert_eq!(retrieved_txs.len(), 12);
+    // Re-submit failed zero-conf level 2 transactions
+    assert_eq!(
+        mempool.insert(Arc::new(tx22.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx24.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    let retrieved_txs = mempool.retrieve(u64::MAX).unwrap();
+    assert_eq!(retrieved_txs.len(), 14);
+    // Re-submit failed zero-conf level 3 transactions
+    assert_eq!(
+        mempool.insert(Arc::new(tx32.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        mempool.insert(Arc::new(tx34.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    let retrieved_txs = mempool.retrieve(u64::MAX).unwrap();
+    assert_eq!(retrieved_txs.len(), 16);
+    // Try to retrieve all transactions in the mempool
+    dbg!(&mempool.stats().unwrap());
+    let retrieved_txs = mempool.retrieve(mempool.stats().unwrap().total_weight).unwrap();
+    assert_eq!(retrieved_txs.len(), 16);
+    assert!(retrieved_txs.contains(&Arc::new(tx31.clone())));
+    assert!(retrieved_txs.contains(&Arc::new(tx32.clone())));
+    assert!(retrieved_txs.contains(&Arc::new(tx33.clone())));
+    assert!(retrieved_txs.contains(&Arc::new(tx34.clone())));
+
+    // Verify that a higher priority transaction is not retrieved due to its zero-conf dependency instead of the lowest
+    // priority transaction
+    let retrieved_txs = mempool.retrieve(mempool.stats().unwrap().total_weight-1).unwrap();
+    assert_eq!(retrieved_txs.len(), 15);
+    assert!(!retrieved_txs.contains(&Arc::new(tx31)));
+    assert!(retrieved_txs.contains(&Arc::new(tx32)));
+    assert!(retrieved_txs.contains(&Arc::new(tx33)));
+    assert!(retrieved_txs.contains(&Arc::new(tx34)));
+}
+
+#[test]
+#[allow(clippy::identity_op)]
 fn test_reorg() {
     let network = Network::LocalNet;
     let (mut db, mut blocks, mut outputs, consensus_manager) = create_new_blockchain(network);
