@@ -49,8 +49,6 @@ pub struct MempoolStorage {
     validator: Arc<dyn MempoolTransactionValidation>,
 }
 
-
-
 impl MempoolStorage {
     /// Create a new Mempool with an UnconfirmedPool and ReOrgPool.
     pub fn new(config: MempoolConfig, validators: Arc<dyn MempoolTransactionValidation>) -> Self {

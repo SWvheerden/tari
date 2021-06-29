@@ -272,7 +272,10 @@ impl UnconfirmedPool {
             .transaction
             .first_kernel_excess_sig()
             .ok_or(UnconfirmedPoolError::TransactionNoKernels)?;
-        if required_transactions.insert(key.clone(), (*transaction).clone()).is_none() {
+        if required_transactions
+            .insert(key.clone(), (*transaction).clone())
+            .is_none()
+        {
             *total_weight += transaction.weight;
         };
         Ok(())
