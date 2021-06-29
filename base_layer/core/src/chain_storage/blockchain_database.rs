@@ -937,13 +937,18 @@ pub fn calculate_mmr_roots<T: BlockchainBackend>(db: &T, block: &Block) -> Resul
     }
 
     for input in body.inputs().iter() {
-        let index =
-            db.fetch_mmr_leaf_index(MmrTree::Utxo, &input.hash())?
-                .ok_or_else(|| ChainStorageError::ValueNotFound {
+        //db search should be much faster and should be the most widely used case,
+        // there for we search first in the db, then in the new mmr
+        let index = match  db.fetch_mmr_leaf_index(MmrTree::Utxo, &input.hash())?{
+                Some(index) => index,
+                None => output_mmr.find_leaf_index(&input.hash())?.ok_or_else(|| ChainStorageError::ValueNotFound {
                     entity: "UTXO".to_string(),
                     field: "hash".to_string(),
                     value: input.hash().to_hex(),
-                })?;
+                })?,
+        };
+
+
 
         if !output_mmr.delete(index) {
             let len = output_mmr.len();
@@ -960,6 +965,7 @@ pub fn calculate_mmr_roots<T: BlockchainBackend>(db: &T, block: &Block) -> Resul
         kernel_mr: kernel_mmr.get_merkle_root()?,
         kernel_mmr_size: kernel_mmr.get_leaf_count()? as u64,
         output_mr: output_mmr.get_merkle_root()?,
+        //rangeproof mmr size and output mmr size should be the same size
         output_mmr_size: proof_mmr.get_leaf_count()? as u64,
         range_proof_mr: proof_mmr.get_merkle_root()?,
     };

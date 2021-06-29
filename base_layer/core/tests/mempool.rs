@@ -608,6 +608,8 @@ fn test_reorg() {
     mempool.process_reorg(vec![], vec![reorg_block4.into()]).unwrap();
 }
 
+
+
 #[test]
 // TODO: This test returns 0 in the unconfirmed pool, so might not catch errors. It should be updated to return better
 // data

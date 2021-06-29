@@ -67,6 +67,11 @@ use tari_p2p::services::liveness::LivenessConfig;
 use tari_test_utils::unpack_enum;
 use tempfile::tempdir;
 use tokio::runtime::Runtime;
+use tari_core::transactions::helpers::spend_utxos;
+use tari_core::mempool::TxStorageResponse;
+use std::sync::Arc;use tari_core::transactions::transaction::OutputFeatures;
+
+
 
 #[test]
 fn request_response_get_metadata() {
@@ -632,6 +637,72 @@ fn local_get_new_block_template_and_get_new_block() {
             .unwrap();
         assert_eq!(block_template.header.height, 1);
         assert_eq!(block_template.body.kernels().len(), 2);
+
+        let block = node.local_nci.get_new_block(block_template.clone()).await.unwrap();
+        assert_eq!(block.header.height, 1);
+        assert_eq!(block.body, block_template.body);
+
+        assert!(node.blockchain_db.add_block(block.clone().into()).is_ok());
+
+        node.shutdown().await;
+    });
+}
+
+#[test]
+fn local_get_new_block_template_and_get_new_block_with_zero_conf() {
+    let factories = CryptoFactories::default();
+    let mut runtime = Runtime::new().unwrap();
+    let temp_dir = tempdir().unwrap();
+    let network = Network::LocalNet;
+    let consensus_constants = network.create_consensus_constants();
+    let (block0, outputs) = create_genesis_block_with_utxos(&factories, &[T, T], &consensus_constants[0]);
+    let rules = ConsensusManagerBuilder::new(network)
+        .with_consensus_constants(consensus_constants[0].clone())
+        .with_block(block0)
+        .build();
+    let (mut node, _rules) = BaseNodeBuilder::new(network)
+        .with_consensus_manager(rules)
+        .start(&mut runtime, temp_dir.path().to_str().unwrap());
+
+    let (tx01, tx01_out, _) = spend_utxos(
+        txn_schema!(from: vec![outputs[1].clone()], to: vec![20_000 * uT], fee: 10*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx02, tx02_out, _) = spend_utxos(
+        txn_schema!(from: vec![outputs[2].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    assert_eq!(
+        node.mempool.insert(Arc::new(tx01.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        node.mempool.insert(Arc::new(tx02.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+
+    let (tx11, _, _) = spend_utxos(
+        txn_schema!(from: tx01_out, to: vec![10_000 * uT], fee: 50*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    let (tx12, _, _) = spend_utxos(
+        txn_schema!(from: tx02_out, to: vec![20_000 * uT], fee: 60*uT, lock: 0, mined_height: 1, features: OutputFeatures::default()),
+    );
+    assert_eq!(
+        node.mempool.insert(Arc::new(tx11.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+    assert_eq!(
+        node.mempool.insert(Arc::new(tx12.clone())).unwrap(),
+        TxStorageResponse::UnconfirmedPool
+    );
+
+
+    runtime.block_on(async {
+        let block_template = node
+            .local_nci
+            .get_new_block_template(PowAlgorithm::Sha3, 0)
+            .await
+            .unwrap();
+        assert_eq!(block_template.header.height, 1);
+        assert_eq!(block_template.body.kernels().len(), 4);
 
         let block = node.local_nci.get_new_block(block_template.clone()).await.unwrap();
         assert_eq!(block.header.height, 1);
