@@ -1,6 +1,4 @@
-# RFC-0240/Atomic Swap
-
-## Time-related Transactions
+# RFC-0241/XMR Atomic Swap
 
 ![status: draft](theme/images/status-draft.svg)
 
@@ -104,6 +102,8 @@ This ensures that in the case that Bob disappears, Alice can reclaim her Tari. A
 But in the case where Alice disappears after Bob posts the Monero transaction, we need to create a lapse transaction for
 Bob to claim the Tari. This transaction is also completed and signed before the first Tari UTXO is published. This transaction
 will reveal Bob's Monero key so that if Alice reappears, she can claim the Monero. 
+
+![swap flow](assets/TXR_XMR_flow.png)
 
 ### TariScript
 
