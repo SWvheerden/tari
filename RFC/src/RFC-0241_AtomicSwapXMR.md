@@ -238,6 +238,9 @@ Alice needs to provide Bob with the following values:
 
 * Adaptor signature part \\(b_{Sra}'\\) for \\(b_{Sra}\\)
 * Signature part \\(a_{Sra}\\)
+* Monero public key \\(X_a\\) on Ristretto 
+* Monero public key \\(Xm_a\\) on ed25519
+* Zero Knowledge proof for \\(x_a == xm_a\\): \\((R_{ZTa}, s_{ZTa})\\) and \\((R_{ZMa}, s_{ZMa})\\) 
 
 Alice constructs  \\(a_{Sra}\\) and \\(b_{Sra}\\)' with
 $$
@@ -251,12 +254,26 @@ X_a &= x_a \cdot G \\\\
 \tag{5}
 $$
 
+Alice constructs the Zero Knowledge proof for \\(x_a == xm_a\\) with:
+
+$$
+\begin{aligned}
+e = \hash{X_a \cat XM_a \cat R_{ZTa} \cat R_{ZMa}}
+s_{ZTa} = r_{ZTa} + e(x_a)
+s_{ZMa} = r_{ZMa} + e(xm_a)
+\end{aligned}
+\tag{6}
+$$
+
 Bob needs to provide Alice with the following values:
 
 * Adaptor signature part \\(b_{Ssb}'\\) for \\(b_{Ssb}\\)
 * Signature part \\(a_{Ssb}\\)
 * Adaptor signature part \\(b_{Slb}'\\) for \\(b_{Slb}\\)
 * Signature part \\(a_{Slb}\\)
+* Monero public key \\(X_b\\) on Ristretto 
+* Monero public key \\(Xm_b\\) on ed25519
+* Zero Knowledge proof for \\(x_b == xm_b\\): \\((R_{ZTb}, s_{ZTb})\\) and \\((R_{ZMb}, s_{ZMb})\\) 
 
 Bob constructs \\(a_{Ssb}\\), \\(b_{Ssb}'\\), \\(a_{Slb}\\) and \\(b_{Slb}'\\) with
 $$
@@ -271,7 +288,18 @@ e_l &= \hash{ (R_{Sl} + (X_b)) \cat \alpha_i \cat \input_i \cat (K_{Sla} + K_{Sl
 R_{Sl} &= r_{Slb_a} \cdot H + r_{Slb_b} \cdot G + R_{Sla} \\\\
 X_b &= x_b \cdot G \\\\
 \end{aligned}
-\tag{6}
+\tag{7}
+$$
+
+Bob constructs the Zero Knowledge proof for \\(x_b == xm_b\\) with:
+
+$$
+\begin{aligned}
+e = \hash{X_b \cat XM_b \cat R_{ZTb} \cat R_{ZMb}}
+s_{ZTb} = r_{ZTb} + e(x_b)
+s_{ZMb} = r_{ZMb} + e(xm_b)
+\end{aligned}
+\tag{8}
 $$
 
 Alice needs to verify Bob's adaptor signatures with:
@@ -281,7 +309,19 @@ $$
 a_{Ssb} \cdot H + b_{Ssb}' \cdot G &= R_{Ssb} + (C_i+K_{Ssb})*e_s \\\\
 a_{Slb} \cdot H + b_{Slb}' \cdot G &= R_{Slb} + (C_i+K_{Slb})*e_l \\\\
 \end{aligned}
-\tag{7}
+\tag{9}
+$$
+
+Alice needs to verify Bob's Monero public keys with:
+
+$$
+\begin{aligned}
+e = \hash{X_b \cat XM_b \cat R_{ZTb} \cat R_{ZMb}}
+s_{ZTb} \cdot G &= R_{ZTb} + e(X_b) \\\\
+s_{ZMb} \cdot M &= R_{ZMb} + e(Xm_b) \\\\
+R_{ZTb} - R_{ZMb} &= s_{ZTb} - s_{ZMb}
+\end{aligned}
+\tag{10}
 $$
 
 Bob needs to verify Alice's adaptor signature with:
@@ -290,7 +330,19 @@ $$
 \begin{aligned}
 a_{Sra} \cdot H + b_{Sra}' \cdot G &= R_{Sra} + (C_i+K_{Sra})*e_r \\\\
 \end{aligned}
-\tag{8}
+\tag{11}
+$$
+
+Bob needs to verify Alice's Monero public keys with:
+
+$$
+\begin{aligned}
+e = \hash{X_a \cat XM_a \cat R_{ZTa} \cat R_{ZMa}}
+s_{ZTa} \cdot G &= R_{ZTa} + e(X_a) \\\\
+s_{ZMa} \cdot M &= R_{ZMa} + e(Xm_a) \\\\
+R_{ZTa} - R_{ZMa} &= s_{ZTa} - s_{ZMa}
+\end{aligned}
+\tag{12}
 $$
 
 If Alice and Bob are happy with the verification, they need to swap out refund and lapse transactions.
@@ -313,7 +365,7 @@ R_{Mla} &= b_{Mla} \cdot G \\\\
 e &= \hash{ (R_{Mla} + R_{Mlb}) \cat \script_l \cat F_l \cat (K_{Ola} + K_{Olb}) \cat C_l} \\\\
 \so_{la} &= k_{Sla} - k_{Ola}
 \end{aligned}
-\tag{9}
+\tag{13}
 $$
 
 Bob needs to provide Alice with the following:
@@ -334,7 +386,7 @@ R_{Mrb} &= b_{Mrb} \cdot G \\\\
 e &= \hash{ (R_{Mra} + R_{Mrb}) \cat \script_r \cat F_r \cat (K_{Ora} + K_{Orb}) \cat C_r} \\\\
 \so_{rb} &= k_{Srb} - k_{Orb}
 \end{aligned}
-\tag{10}
+\tag{14}
 $$
 
 Although the script validation on output \\(C_i\\)  will not pass due to the lock height, both Alice and Bob need to
@@ -375,7 +427,7 @@ R_{Msa} &= b_{Msa} \cdot G \\\\
 e &= \hash{ (R_{Msa} + R_{Msb}) \cat \script_s \cat F_s \cat (K_{Osa} + K_{Osb}) \cat C_s} \\\\
 \so_{sa} &= k_{Ssa} - k_{Osa} \\\\
 \end{aligned}
-\tag{11}
+\tag{15}
 $$
 
 Bob constructs the swap transaction.
@@ -395,7 +447,7 @@ R_{Ms} &= R_{Msa} + R_{Msb} \\\\
 \so_{sb} &= k_{Ssb} - k_{Osb} \\\\
 \so_{s} &= \so_{sa} +\so_{sb} \\\\
 \end{aligned}
-\tag{12}
+\tag{16}
 $$
 
 Bob's transaction now has all the required signatures to complete the transaction. He will then publish the transaction.
@@ -412,7 +464,7 @@ b_{Ssb} &= r_{Ssb_b} + x_b + e_s(k_{Ssb} + k_i) \\\\
 b_{Ssb} - b_{Ssb}' &= r_{Ssb_b} + x_b + e_s(k_{Ssb} + k_i) -(r_{Ssb_b} +  e_s(k_{Ssb}+k_i))\\\\
 b_{Ssb} - b_{Ssb}' &= x_b \\\\
 \end{aligned}
-\tag{13}
+\tag{17}
 $$
 
 With \\(x_b\\) in hand she can calculate \\(X = x_a + x_b\\) and with this she claim the Monero.
@@ -439,7 +491,7 @@ R_{Mr} &= R_{Mra} + R_{Mrb} \\\\
 \so_{ra} &= k_{Sra} - k_{Ora} \\\\
 \so_{r} &= \so_{ra} +\so_{rb} \\\\
 \end{aligned}
-\tag{14}
+\tag{18}
 $$
 
 This allows Alice to claim back her Tari, but it also exposes her Monero key \\(x_a\\)
@@ -452,7 +504,7 @@ b_{Sra} &= r_{Sra_b} + x_a + e_r(k_{Sra} + k_i) \\\\
 b_{Sra} - b_{Sra}' &= r_{Sra_b} + x_a + e_r(k_{Sra} + k_i) -(r_{Sra_b} +  e_r(k_{Sra}+k_i))\\\\
 b_{Sra} - b_{Sra}' &= x_a \\\\
 \end{aligned}
-\tag{15}
+\tag{19}
 $$
 
 
@@ -478,7 +530,7 @@ R_{Ml} &= R_{Mla} + R_{Mlb} \\\\
 \so_{lb} &= k_{Slb} - k_{Olb} \\\\
 \so_{r} &= \so_{la} +\so_{lb} \\\\
 \end{aligned}
-\tag{16}
+\tag{20}
 $$
 
 This allows Bob to claim the Tari he originally wanted, but it also exposes his Monero key \\(x_b\\)
@@ -491,7 +543,7 @@ b_{Slb} &= r_{Slb_b} + x_a + e_r(k_{Slb} + k_i) \\\\
 b_{Slb} - b_{Slb}' &= r_{Slb_b} + x_b + e_r(k_{Slb} + k_i) -(r_{Slb_b} +  e_r(k_{Slb}+k_i))\\\\
 b_{Slb} - b_{Slb}' &= x_b \\\\
 \end{aligned}
-\tag{17}
+\tag{21}
 $$
 
 ## Alternative approach
@@ -591,7 +643,7 @@ k_a &=  \hash{\hash{K_a' \cat K_b'} \cat K_a' } * k_a' \\\\
 K_b &=  \hash{\hash{K_a' \cat K_b'} \cat K_b' } * K_b' \\\\
 k_b &=  \hash{\hash{K_a' \cat K_b'} \cat K_b' } * k_b' \\\\
 \end{aligned}
-\tag{1}
+\tag{22}
 $$
 
 The Monero key parts for Alice and Bob is constructed as follows:
@@ -603,7 +655,7 @@ x_a &=  \hash{\hash{X_a' \cat X_b'} \cat X_a' } * x_a' \\\\
 x_b &=  \hash{\hash{X_a' \cat X_b'} \cat X_b' } * x_b' \\\\
 x &= x_a + x_b \\\\
 \end{aligned}
-\tag{2}
+\tag{23}
 $$
 
 
@@ -622,6 +674,19 @@ Bob needs to provide Alice the following:
 * Script key  \\( \\k_{Sb}\\)
 * Monero public key:  \\( X_b'\\)
 
+After this exchange of values, Alice needs to provide Bob with the following:
+
+* Monero public key \\(X_a\\) on Ristretto 
+* Monero public key \\(Xm_a\\) on ed25519
+* Zero Knowledge proof for \\(x_a == xm_a\\): \\((R_{ZTa}, s_{ZTa})\\) and \\((R_{ZMa}, s_{ZMa})\\) 
+
+Bob needs to provide Alice with the following:
+
+* Monero public key \\(X_b\\) on Ristretto 
+* Monero public key \\(Xm_b\\) on ed25519
+* Zero Knowledge proof for \\(x_b == xm_b\\): \\((R_{ZTb}, s_{ZTb})\\) and \\((R_{ZMb}, s_{ZMb})\\) 
+
+The construction and verification of the Zero knowledge proofs are shown in (6), (8), (10) and (12)
 
 ### Alternative approach XTR payment
 
@@ -669,16 +734,26 @@ Where possible, the "usual" notation is used to denote terms commonly found in c
 characters are used as private keys, while uppercase characters are used as public keys. New terms introduced here are 
 assigned greek lowercase letters in most cases. Some terms used here are noted down in [TariScript]. 
 
-| Name               | Symbol             | Definition |
-|:-------------------|--------------------| -----------|
-| Monero key         | \\( X \\)        | Alice's partial  Monero public key  |
-| Alice's Monero key | \\( X_a \\)      | Alice's partial  Monero public key  |
-| Bob's Monero key   | \\( X_b \\)      | Bob's partial  Monero public key  |
-| Script key         | \\( K_s \\)      | The [script key] of the utxo |
-| Alice's Script key | \\( K_sa \\)     | Alice's partial [script key]  |
-| Bob's Script key   | \\( K_sb \\)     | Bob's partial [script key]  |
-| Alice's adaptor signature   | \\( b'_{Sa} \\)     | Alice's adaptor signature for the signature \\( b_{Sa} \\) of the script_signature of the utxo |
-| Bob's adaptor signature   | \\( b'_{Sb} \\)     | Bob's adaptor signature for the \\( b_{Sb} \\) of the script_signature of the utxo |
+| Name                        | Symbol                | Definition |
+|:----------------------------|-----------------------| -----------|
+| Monero key                  | \\( X \\)             | Alice's partial  Monero public key  on Ristretto |
+| Alice's Monero key          | \\( X_a \\)           | Alice's partial  Monero public key on Ristretto |
+| Bob's Monero key            | \\( X_b \\)           | Bob's partial  Monero public key on Ristretto   |
+| Monero key                  | \\( Xm \\)            | Alice's partial  Monero public key  on ed25519 |
+| Alice's Monero key          | \\( Xm_a \\)          | Alice's partial  Monero public key on ed25519 |
+| Bob's Monero key            | \\( Xm_b \\)          | Bob's partial  Monero public key on ed25519   |
+| Script key                  | \\( K_s \\)           | The [script key] of the utxo |
+| Alice's Script key          | \\( K_sa \\)          | Alice's partial [script key]  |
+| Bob's Script key            | \\( K_sb \\)          | Bob's partial [script key]  |
+| Alice's adaptor signature   | \\( b'_{Sa} \\)       | Alice's adaptor signature for the signature \\( b_{Sa} \\) of the script_signature of the utxo |
+| Bob's adaptor signature     | \\( b'_{Sb} \\)       | Bob's adaptor signature for the \\( b_{Sb} \\) of the script_signature of the utxo |
+| Alice's ZK tari proof       | \\(R_{ZTa}, s_{ZTa})  | Zero knowledge proof signature for Alice's key \\(x_a) |
+| Bob's ZK tari proof         | \\(R_{ZTb}, s_{ZTb})  | Zero knowledge proof signature for Bob's key \\(x_b) |
+| Alice's ZK monero proof     | \\(R_{ZMa}, s_{ZMa})  | Zero knowledge proof signature for Alice's key \\(xm_a) |
+| Bob's ZK monero proof       | \\(R_{ZMb}, s_{ZMb})  | Zero knowledge proof signature for Bob's key \\(xm_b) |
+| Ristretto G generator       | \\(k \cdot G  \\)     | Value k over Tari G generator |
+| Ristretto H generator       | \\(k \cdot H  \\)     | Value k over Tari H generator |
+| ed25519 G generator         | \\(k \cdot M  \\)     | Value k over Monero G generator |
 
 
 [HTLC]: Glossary.md#hashed-time-locked-contract
