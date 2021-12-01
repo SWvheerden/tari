@@ -63,16 +63,16 @@ $$
 
 ## Description
 
-Doing atomic swaps with Monero is more complicated and requires a crypto dance to complete as Monero does not
+Doing atomic swaps with Monero is more complicated and requires a cryptographic dance to complete as Monero does not
 implement any form of HTLC's or the like. This means that when doing an atomic swap with Monero, most of the logic will
 have to be implemented on the Tari side. Atomic swaps between Monero and bitcoin have been implemented by the [Farcaster  project](https://github.com/farcaster-project/RFCs)
-and the [commit team](https://github.com/comit-network/xmr-btc-swap). Due to the way that TariScript works, we have a few advantages over the bitcoin script when it comes to [adaptor signatures](https://tlu.tarilabs.com/cryptography/introduction-to-scriptless-scripts#adaptor-signatures) as the [script key] was specifically designed with [scriptless scripts](https://tlu.tarilabs.com/cryptography/introduction-to-scriptless-scripts) in mind.
+and the [comit team](https://github.com/comit-network/xmr-btc-swap). Due to the way that TariScript works, we have a few advantages over the bitcoin script when it comes to [adaptor signatures](https://tlu.tarilabs.com/cryptography/introduction-to-scriptless-scripts#adaptor-signatures) as the [script key] was specifically designed with [scriptless scripts](https://tlu.tarilabs.com/cryptography/introduction-to-scriptless-scripts) in mind.
 
 ### Method
 
-The primary, happy outline of a Tari - Monero atomic swap is described here, and more detail will follow. We will assume here that Alice wants to trade her XTR for Bob's XMR.
+The primary, happy path outline of a Tari - Monero atomic swap is described here, and more detail will follow. We will assume here that Alice wants to trade her XTR for Bob's XMR.
 
-* Negotiation - Here, both parties negotiate about the values and how the Monero and Tari Utxo's will look
+* Negotiation - Here, both parties negotiate about the values and how the Monero and Tari UTXO's will look
 * Commitment - Here, both parties commit to their use of keys, and Bob commits to the refund transaction
 * XTR payment - Here, the XTR payment is made to a multi-party UTXO containing a script
 * XMR Payment - The Monero payment is made to a multiparty [scriptless script](https://tlu.tarilabs.com/cryptography/introduction-to-scriptless-scripts) UTXO.
@@ -555,9 +555,9 @@ implement any form of HTLC's or the like. This means that when doing an atomic s
 have to be implemented on the Tari side. Atomic swaps between Monero and bitcoin have been implemented by the [Farcaster  project](https://github.com/farcaster-project/RFCs)
 and the [commit team](https://github.com/comit-network/xmr-btc-swap).
 
-### Alternative approach Method
+### Alternative approach method
 
-The primary, happy outline of a Tari - Monero atomic swap is described here, and more detail will follow. We will assume here that Alice wants to trade her XTR for Bob's XMR.
+The primary, happy path outline of a Tari - Monero atomic swap is described here, and more detail will follow. We will assume here that Alice wants to trade her XTR for Bob's XMR.
 
 * Negotiation - Here, both parties negotiate about the values and how the Monero and Tari Utxo's will look
 * Commitment - Here, both parties commit to their use of keys, and Bob commits to the refund transaction
@@ -750,7 +750,7 @@ assigned greek lowercase letters in most cases. Some terms used here are noted d
 | Alice's ZK tari proof       | \\(R_{ZTa}, s_{ZTa} \\)  | Zero knowledge proof signature for Alice's key \\(x_a) |
 | Bob's ZK tari proof         | \\(R_{ZTb}, s_{ZTb} \\)  | Zero knowledge proof signature for Bob's key \\(x_b) |
 | Alice's ZK monero proof     | \\(R_{ZMa}, s_{ZMa} \\)  | Zero knowledge proof signature for Alice's key \\(xm_a) |
-| Bob's ZK monero proof       | \\(R_{ZMb}, s_{ZMb})  | Zero knowledge proof signature for Bob's key \\(xm_b) |
+| Bob's ZK monero proof       | \\(R_{ZMb}, s_{ZMb} \\)  | Zero knowledge proof signature for Bob's key \\(xm_b) |
 | Ristretto G generator       | \\(k \cdot G  \\)     | Value k over Tari G generator |
 | Ristretto H generator       | \\(k \cdot H  \\)     | Value k over Tari H generator |
 | ed25519 G generator         | \\(k \cdot M  \\)     | Value k over Monero G generator |

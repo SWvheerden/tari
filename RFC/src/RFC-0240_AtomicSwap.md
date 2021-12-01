@@ -153,7 +153,7 @@ _height_ is an absolute block height that Bob chooses to lock up the funds to gi
 ## XTR - XMR swap 
 
 The Tari - Monero atomic swap involved a bit more detail than just a simple script and is explained in
-document: [RFC-0241: XTR - XMR swap](RFC-0241_AtomicSwapXMR.md)
+[RFC-0241: XTR - XMR swap](RFC-0241_AtomicSwapXMR.md)
 
 
 ## Notation
