@@ -327,7 +327,7 @@ operation fails with `VERIFY_FAILED` if the signature is invalid.
 
 ##### Ristretto,
 
-Pop the top element, converts it to a public_key, and pushes this to the stack.
+Pop the top element, converts it to a Ristretto public_key, and pushes this to the stack.
 
 * Fails with `EMPTY_STACK` if the stack is empty.
 * Fails with `INVALID_INPUT` if the top stack element is not a secret_key.
