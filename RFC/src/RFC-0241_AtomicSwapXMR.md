@@ -747,7 +747,7 @@ assigned greek lowercase letters in most cases. Some terms used here are noted d
 | Bob's Script key            | \\( K_sb \\)          | Bob's partial [script key]  |
 | Alice's adaptor signature   | \\( b'_{Sa} \\)       | Alice's adaptor signature for the signature \\( b_{Sa} \\) of the script_signature of the utxo |
 | Bob's adaptor signature     | \\( b'_{Sb} \\)       | Bob's adaptor signature for the \\( b_{Sb} \\) of the script_signature of the utxo |
-| Alice's ZK tari proof       | \\(R_{ZTa}, s_{ZTa})  | Zero knowledge proof signature for Alice's key \\(x_a) |
+| Alice's ZK tari proof       | \\(R_{ZTa}, s_{ZTa} \\)  | Zero knowledge proof signature for Alice's key \\(x_a) |
 | Bob's ZK tari proof         | \\(R_{ZTb}, s_{ZTb})  | Zero knowledge proof signature for Bob's key \\(x_b) |
 | Alice's ZK monero proof     | \\(R_{ZMa}, s_{ZMa})  | Zero knowledge proof signature for Alice's key \\(xm_a) |
 | Bob's ZK monero proof       | \\(R_{ZMb}, s_{ZMb})  | Zero knowledge proof signature for Bob's key \\(xm_b) |
