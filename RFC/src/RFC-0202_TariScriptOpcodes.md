@@ -325,12 +325,27 @@ push 0.
 Identical to [`CheckSig`](#checksigmsg), except that nothing is pushed to the stack if the signature is valid, and the
 operation fails with `VERIFY_FAILED` if the signature is invalid.
 
-##### Ristretto,
+##### RistrettoPoint,
 
-Pop the top element, converts it to a Ristretto public_key, and pushes this to the stack.
+Pop the top element, converts it to a Ristretto point, and pushes this to the stack.
 
 * Fails with `EMPTY_STACK` if the stack is empty.
-* Fails with `INVALID_INPUT` if the top stack element is not a secret_key.
+* Fails with `INVALID_INPUT` if the top stack element is not a input.
+
+##### Ed25519Point,
+
+Pop the top element, converts it to a Ed25519 point, and pushes this to the stack.
+
+* Fails with `EMPTY_STACK` if the stack is empty.
+* Fails with `INVALID_INPUT` if the top stack element is not a input.
+
+##### Secp256k1Point,
+
+Pop the top element, converts it to a Secp256k1 point, and pushes this to the stack.
+
+* Fails with `EMPTY_STACK` if the stack is empty.
+* Fails with `INVALID_INPUT` if the top stack element is not a input.
+
 
 ### Miscellaneous
 
