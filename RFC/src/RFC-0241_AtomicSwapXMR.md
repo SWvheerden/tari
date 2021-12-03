@@ -88,46 +88,57 @@ other notation will be noted in the [Notation](#notation) section.
 
 ## TL;DR
 
-This scheme revolves around Alice, who wants to exchange her Tari for Bob's Monero. Because they don't 
-trust each other, they have to commit some values to do the exchange. And if something goes wrong here, we want to ensure
-that we can refund both parties either in Monero or Tari.
+This RFC discusses two methods to perform the Tari - Monero atomic swap; one makes full use of the power of TariScript 
+and the other by following a more traditional approach and making use of TariScript. The following discussion is equally 
+applicable to both methods except where explicitly differentiated.
 
-How this works is that Alice and Bob create a shared output on both chains. The Monero output is a simple aggregate key
-to unlock the UTXO, while the Tari UTXO is unlocked by one of multiple keys. The unlocking key is determined by the current
-Tari block height.
+The scheme revolves around Alice, who wants to exchange her Tari for Bob's Monero. Because they don't trust each other, 
+they have to commit some information to do the exchange. And if something goes wrong here, we want to ensure that we can 
+refund both parties either in Monero or Tari.
 
-The process is started by Alice and Bob exchanging and committing to some information. Alice is the first one to publish
-a UTXO
-and does this by creating the Tari UTXO. If Bob is happy with the Tari UTXO and verifies all the information, he
-will publish a Monero UTXO. An aggregate key simply locks this Monero UTXO that neither Alice nor Bob knows, but
-they both know half of the key.
+How this works is that Alice and Bob create a shared output on both chains. The Monero output is a simple aggregate key 
+to unlock the UTXO, while multiple keys are needed to unlock the Tari UTXO. An aggregate key locks this Monero UTXO that 
+neither Alice nor Bob knows, but they both know half of the key. The current Tari block height determines the unlocking 
+key.
 
-The TariScript script on the UTXO is constructed so that when either Alice or Bob spends this, they will have to reveal 
-their half of the Monero key. This allows the other party to claim the Monero by being the only one to own the complete
-Monero aggregate key.
+The process is started by Alice and Bob exchanging and committing to some information. Alice is the first to publish a 
+transaction, which creates the Tari UTXO. If Bob is happy that the Tari UTXO has been mined and verifies all the 
+information, he will publish a transaction to create the Monero UTXO.
 
-The script has two lock heights, determining who can claim the Tari UTXO. Before the first lock height, only Bob can claim
-it; we call this the swap transaction. After the first and before the second, only Alice can claim it, and this we call
-the refund transaction. Finally, after the second lock height, only Bob can claim the transaction; we call this the lapse
-transaction. 
+The TariScript script on the UTXO ensures that they will have to reveal their portion of the Monero key when either 
+Alice or Bob spends this. This disclosure allows the other party to claim the Monero by being the only one to own the 
+complete Monero aggregate key.
 
-This will ensure that at any point in time, at least someone can claim the Tari UTXO, and if that person does so, the other
-party can claim the Monero UTXO by looking at the spending data. The refund transaction exists to ensure that we can always
-claim the refund if Bob disappears after Alice posts the Tari UTXO. We need to ensure that this refund transaction is
-completed and signed by both Alice and Bob before Alice publishes the Tari UTXO. This ensures that if Bob disappears, Alice
-can reclaim her Tari. And if Bob reappears, he can reclaim his Monero.
-
-But in the case where Alice disappears after Bob posts the Monero transaction, we need to create a lapse transaction for
-Bob to claim the Tari. This transaction is also completed and signed before the first Tari UTXO is published. This transaction
-will reveal Bob's Monero key so that if Alice reappears, she can claim the Monero. We cannot allow Alice to spend this here
-because this opens up an attack vector to enable Alice to take the Monero from Bob while also taking the Tari transaction
-by paying a higher fee.
-
-We can visualize the happy path flow with the image below.
+We can visualize the happy path flow with the image below. 
 ![swap flow](assets/XTR_XMR_happy.png)
 
-The image below details the time flow of the Tari transactions spending the Tari UTXO.
+The script will ensure that at any point in time, at least someone can claim the Tari UTXO, and if that person does so, 
+the other party can claim the Monero UTXO by looking at the spending data. It has two lock heights, determining who can 
+claim the Tari UTXO if the happy path fails. Before the first lock height, only Bob can claim the Tari; we call this the 
+swap transaction.
+
+If Bob disappears after Alice has posted the Tari UTXO, Alice can claim the Tari after the first lock height and before 
+the second lock height; we call this the refund transaction. It ensures that Alice can reclaim her Tari if Bob 
+disappears, and if Bob reappears, he can reclaim his Monero.
+
+That leaves us with the scenario where Alice disappears after Bob posts the Monero transaction, in which case we need to 
+protect Bob. After the second lock height, only Bob can claim the Tari; we call this the lapse transaction. The lapse 
+transaction will reveal Bob's Monero key so that if Alice reappears, she can claim the Monero.
+
+Using the second method, we need to ensure that the refund and the lapse transactions are completed and signed by Alice 
+and Bob before Alice publishes the Tari UTXO. The first method does not need this guarantee.
+
+The image below details the time flow of the Tari transactions spending the Tari UTXO. 
 ![swap flow](assets/TXR_XMR_flow.png)
+
+Another consideration for claiming the Tari after the second lock height is to open up the script so that either party 
+can claim it with the lapse transaction. The counterparty can then claim the Monero; however, this will open up an 
+attack vector to enable either party to claim the Monero while claiming the Tari. Either party could trivially pull off 
+such a scheme by performing a front-running attack and having a bit of luck. The counterparty monitors all broadcast 
+transactions to base nodes. Upon identifying the lapse transaction, they do two things; in quick succession, broadcast 
+their lapse transaction and the transaction to claim the Monero, both with sufficiently high fees. Base nodes will 
+prefer to mine transactions with the higher fees, and thus the counterparty can walk away with both the Tari and the 
+Monero.
 
 ## Key construction
 
@@ -149,11 +160,12 @@ $$
 
 ### Detail
 
-This method relies purely on TariScript to enforce the exposure of the private Monero aggregate keys. The script enforces
-the spending party via the operation `Ed25519Point` to supply their Monero private key part as input data to the script. 
-All transactions are simply created by the spending party alone. Bob requires a pre_image from Alice to complete the swap
-as Alice needs to verify that Bob did publish the Monero transaction and that everything is complete as they have agreed.
-If she is happy, she will provide Bob with the pre_image to immediately claim this UTXO.
+This method relies purely on TariScript to enforce the exposure of the private Monero aggregate keys. The script forces 
+the spending party to supply their Monero private key part as input data to the script, evaluated via the operation 
+`Ed25519Point`. The simplicity of this method lies therein that the spending party creates all transactions on their 
+own. Bob requires a pre-image from Alice to complete the swap transaction; Alice needs to verify that Bob published the 
+Monero transaction and that everything is complete as they have agreed. If she is happy, she will provide Bob with the 
+pre-image to immediately claim the Tari UTXO.
 
 ### TariScript
 
@@ -184,9 +196,9 @@ The Script used for the Tari UTXO is as follows:
    ENDIF
 ```
 
-Before `height_1`, Bob can claim this UTXO by supplying: `pre_image`, his private Monero key part `x_b`.
-Before `height_2,` Alice can claim this UTXO by supplying her private Monero key part `x_a`.
-After `height_2,` Bob can claim this UTXO by supplying his private Monero key part `x_b`.
+Before `height_1`, Bob can claim the Tari UTXO by supplying `pre_image` and his private Monero key part `x_b`. Before 
+`height_2,` Alice can claim the Tari UTXO by supplying her private Monero key part `x_a`. After `height_2,` Bob can 
+claim the Tari UTXO by supplying his private Monero key part `x_b`.
 
 ### Negotiation
 
