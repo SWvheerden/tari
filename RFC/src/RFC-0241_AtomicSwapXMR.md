@@ -98,8 +98,8 @@ Tari block height.
 
 The process is started by Alice and Bob exchanging and committing to some information. Alice is the first one to publish
 a UTXO
-and does this by creating the Tari UTXO. If Bob is happy with the Tari UTXO and verifies all the information he can, he
-will publish a Monero UTXO. This Monero UTXO is simply locked by an aggregate key that neither Alice nor Bob knows, but
+and does this by creating the Tari UTXO. If Bob is happy with the Tari UTXO and verifies all the information, he
+will publish a Monero UTXO. An aggregate key simply locks this Monero UTXO that neither Alice nor Bob knows, but
 they both know half of the key.
 
 The TariScript script on the UTXO is constructed so that when either Alice or Bob spends this, they will have to reveal 
@@ -122,6 +122,9 @@ Bob to claim the Tari. This transaction is also completed and signed before the 
 will reveal Bob's Monero key so that if Alice reappears, she can claim the Monero. We cannot allow Alice to spend this here
 because this opens up an attack vector to enable Alice to take the Monero from Bob while also taking the Tari transaction
 by paying a higher fee.
+
+We can visualize the happy path flow with the image below.
+![swap flow](assets/XTR_XMR_happy.png)
 
 The image below details the time flow of the Tari transactions spending the Tari UTXO.
 ![swap flow](assets/TXR_XMR_flow.png)
@@ -286,7 +289,7 @@ he can use this knowledge to claim the Monero she wanted all along as only she n
 
 ### Detail
 
-This method relies on using adapter signatures and multi-party commitment signatures to ensure that the spending
+This method uses adapter signatures and multi-party commitment signatures to ensure that the spending
 party leaks their private Monero key part. Because all keys are aggregates keys, we need to ensure that the refund
 and lapse transactions are negotiated and signed before Alice publishes the Tari UTXO. This will allow either Alice or Bob to
 claim the refund and lapse transactions, respectively, without the other party being online. 
@@ -316,7 +319,7 @@ After `height_2,` Bob can claim this UTXO.
 
 ### Negotiation
 
-Alice and Bob have to negotiate the exchange rate and the amount to be exchanged in the atomic swap. 
+Alice and Bob have to negotiate the exchange rate and the amount exchanged in the atomic swap. 
 They also need to decide how the two UTXO's will look on the blockchain. To accomplish this, the following needs to be finalized:
 
 * Amount of Tari to swap for the amount of Monero
