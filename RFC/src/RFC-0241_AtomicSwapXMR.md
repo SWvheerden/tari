@@ -196,9 +196,9 @@ The Script used for the Tari UTXO is as follows:
    ENDIF
 ```
 
-Before `height_1`, Bob can claim the Tari UTXO by supplying `pre_image` and his private Monero key part `x_b`. Before 
-`height_2,` Alice can claim the Tari UTXO by supplying her private Monero key part `x_a`. After `height_2,` Bob can 
-claim the Tari UTXO by supplying his private Monero key part `x_b`.
+Before `height_1`, Bob can claim the Tari UTXO by supplying `pre_image` and his private Monero key part `x_b`. After 
+`height_1` but before `height_2`, Alice can claim the Tari UTXO by supplying her private Monero key part `x_a`. After 
+`height_2`, Bob can claim the Tari UTXO by supplying his private Monero key part `x_b`.
 
 ### Negotiation
 
@@ -209,17 +209,19 @@ how the two UTXO's will look on the blockchain. To accomplish this, the followin
 * Monero public key parts \\(X_a\\), \\(X_b\\) and its aggregate form \\(X\\)
 * Tari [script key] parts \\(K_{Sa}\\), \\(K_{Sb}\\) 
 * The [TariScript] to be used in the Tari UTXO
-* The blinding factor \\(k_i\\) for the Tari UTXO, this can be a Diffie-Hellman between their addresses.
+* The blinding factor \\(k_i\\) for the Tari UTXO, which can be a Diffie-Hellman between their addresses.
 
 
 ### Key selection
 
-Using equal (1), we create the Monero keys as they are multi-party aggregate keys.
+Using (1), we create the Monero keys as they are multi-party aggregate keys.
 The Monero key parts for Alice and Bob is constructed as follows:
 
 
 $$
 \begin{aligned}
+X_a' &= x_a' \cdot M \\\\
+X_b' &= x_b' \cdot M \\\\
 x_a &=  \hash{\hash{X_a' \cat X_b'} \cat X_a' } * x_a' \\\\
 x_b &=  \hash{\hash{X_a' \cat X_b'} \cat X_b' } * x_b' \\\\
 x &= x_a + x_b \\\\
@@ -230,71 +232,73 @@ $$
 
 ### Commitment phase
 
-This phase allows Alice and Bob to commit to using their keys. This phase requires more than one round to complete
-Some of the information that needs to be committed depends on previous knowledge. 
+This phase allows Alice and Bob to commit to using their keys and requires more than one round to complete.
+Some of the information that needs to be committed to depends on previous knowledge. 
 
-Alice needs to provide Bob the following:
+Alice needs to provide Bob with the following:
 
-* Script key  \\( K_{Sa}\\)
-* Monero public key:  \\( Xm_a'\\)
+* Script public key: \\( K_{Sa}\\)
+* Monero public key:  \\( Xm_a\\)
 
 $$
 \begin{aligned}
-Xm_a' &=  x_a \cdot M \\\\
+Xm_a &=  x_a \cdot M \\\\
 \end{aligned}
 \tag{3}
 $$
 
-Bob needs to provide Alice the following:
+Bob needs to provide Alice with the following:
 
-* Script key  \\( K_{Sb}\\)
-* Monero public key:  \\( Xm_b'\\)
+* Script public key: \\( K_{Sb}\\)
+* Monero public key:  \\( Xm_b\\)
 
 $$
 \begin{aligned}
-Xm_b' &=  x_b \cdot M \\\\
+Xm_b &=  x_b \cdot M \\\\
 \end{aligned}
 \tag{4}
 $$
 
 ### XTR payment
 
-Alice will construct the Tari UTXO with the correct [script](#tariscript) and publish this to the blockchain, knowing 
-that she can reclaim her Tari if Bob vanishes or tries to break the agreement. This is done with standard MW rules and signatures.
+Alice will construct the Tari UTXO with the correct [script](#tariscript) and publish the containing transaction to the 
+blockchain, knowing that she can reclaim her Tari if Bob vanishes or tries to break the agreement. This is done with 
+standard Mimblewimble rules and signatures.
 
-### XMR Payment
+### XMR payment
 
-If Bob cab see that Alice has published the Tari UTXO with the correct script, Bob can go ahead and publish the Monero UTXO
-with the aggregate key \\(Xm = Xm_a + Xm_b \\).
+When Bob sees that the Tari UTXO that Alice created is mined on the Tari blockchain with the correct script, Bob can go ahead 
+and publish the Monero transaction containing the Monero UTXO with the aggregate key \\(Xm = Xm_a + Xm_b \\).
 
 ### Claim XTR 
 
-If Alice can see that Bob published the Monero UTXO to the correct aggregate key \\(Xm\\). She does not yet have the required
-key \\(x_b \\) to claim the Monero. 
-But she can now provide Bob with the correct pre_image to spend the Tari UTXO.
+When Alice sees that the Monero UTXO that Bob created is mined on the Monero blockchain containing the correct aggregate 
+key \\(Xm\\), she can provide Bob with the requird `pre_image` to spend the Tari UTXO. She does not have the 
+missing key \\(x_b \\) to claim the Monero yet, but it will be revealed when Bob claims the Tari. 
 
-Bob can now supply the pre_image and his Monero private key to the transaction to unlock the script.
+Bob can now supply the `pre_image` and his Monero private key as transaction input to unlock the script.
 
 ### Claim XMR
 
-Alice can now see that Bob spent the Tari UTXO, and by looking at the `input_data` required to spend the script, she can learn
-Bob's secret Monero key. Although this key is public, her part of the Monero spend key is still private, and thus only she
-knows the complete Monero spend key. She can use this knowledge to claim the Monero UTXO.
+Alice can now see that Bob spent the Tari UTXO, and by examining the `input_data` required to satisfy the script, she 
+can learn Bob's secret Monero key. Although this private key is now public knowledge, her part of the Monero spend key 
+is still private, and thus only she knows the complete Monero spend key. She can use this knowledge to claim the Monero 
+UTXO.
 
 ### The refund
 
-If something goes wrong and Bob never publishes the Monero, or he disappears. Alice needs to wait for the lock height
-`height_1` to pass. This will allow her to reclaim her Tari. But in doing so, she needs to publish her Monero
-secret key as input to the TariScript to unlock the Tari. In doing so, when Bob comes back online, he can use
-this knowledge to reclaim his Monero as only he now knows both parts of the Monero UTXO spend key.
+If something goes wrong and Bob never publishes the Monero, or he disappears, Alice needs to wait for the lock height
+`height_1` to pass. This will allow her to reclaim her Tari, but in doing so, she needs to publish her Monero secret key 
+as input to the script to unlock the Tari. When Bob comes back online, he can use this public knowledge to reclaim his 
+Monero as only he now knows both parts of the Monero UTXO spend key.
 
 
 ### The lapse transaction
 
-If something goes wrong and Alice never gives Bob the preimage, or she disappears. Bob needs to wait for the lock height
-`height_2` to pass. This will allow him to create claim the Tari he wanted all along. But in doing so, he needs to publish
-his Monero secret key as input to the TariScript to unlock the Tari. In doing so, when Alice comes back online,
-he can use this knowledge to claim the Monero she wanted all along as only she now knows both parts of the Monero UTXO spend key.
+If something goes wrong and Alice never gives Bob the requird `pre_image`, Bob needs to wait for the lock height
+`height_2` to pass. This will allow him to claim the Tari he wanted all along, but in doing so, he needs to publish
+his Monero secret key as input to the scrpipt to unlock the Tari. When Alice comes back online, she can use this public 
+knowledge to claim the Monero she wanted all along as only she now knows both parts of the Monero UTXO spend key.
 
 
 ## Method 2
@@ -325,9 +329,8 @@ The Script used for the Tari UTXO is as follows:
    ENDIF
 ```
 
-Before `height_1`, Bob can claim this UTXO if Alice gives him the correct signature to complete the transaction.
-Before `height_2,` Alice can claim this UTXO.
-After `height_2,` Bob can claim this UTXO.
+Before `height_1`, Bob can claim the Tari UTXO if Alice gives him the correct signature to complete the transaction.
+After `height_1` but before `height_2`, Alice can claim the Tari UTXO. After `height_2,` Bob can claim the Tari UTXO.
 
 ### Negotiation
 
@@ -336,21 +339,21 @@ They also need to decide how the two UTXO's will look on the blockchain. To acco
 
 * Amount of Tari to swap for the amount of Monero
 * Monero public key parts \\(Xm_a\\), \\(Xm_b\\) and its aggregate form \\(X\\)
-* Tari [script key] parts \\(K_{Ssa}\\), \\(K_{Ssb}\\) and its aggregate form \\(K_{Ss}\\)
-* Tari [script key] parts \\(K_{Sra}\\), \\(K_{Srb}\\) and its aggregate form \\(K_{Sr}\\)
-* Tari [script key] parts \\(K_{Sla}\\), \\(K_{Slb}\\) and its aggregate form \\(K_{Sl}\\)
-* Tari [sender offset key] parts  \\(K_{Osa}\\), \\(K_{Osb}\\) and its aggregate form \\(K_{Os}\\)
-* Tari [sender offset key] parts  \\(K_{Ora}\\), \\(K_{Orb}\\) and its aggregate form \\(K_{Or}\\)
-* Tari [sender offset key] parts  \\(K_{Ola}\\), \\(K_{Olb}\\) and its aggregate form \\(K_{Ol}\\)
+* Tari [script key] parts \\(K_{Ssa}\\), \\(K_{Ssb}\\) and its aggregate form \\(K_{Ss}\\) for the swap transaction
+* Tari [script key] parts \\(K_{Sra}\\), \\(K_{Srb}\\) and its aggregate form \\(K_{Sr}\\) for the refund transaction
+* Tari [script key] parts \\(K_{Sla}\\), \\(K_{Slb}\\) and its aggregate form \\(K_{Sl}\\) for the lapse transaction
+* Tari [sender offset key] parts  \\(K_{Osa}\\), \\(K_{Osb}\\) and its aggregate form \\(K_{Os}\\) for the swap transaction
+* Tari [sender offset key] parts  \\(K_{Ora}\\), \\(K_{Orb}\\) and its aggregate form \\(K_{Or}\\) for the refund transaction
+* Tari [sender offset key] parts  \\(K_{Ola}\\), \\(K_{Olb}\\) and its aggregate form \\(K_{Ol}\\) for the lapse transaction
 * All of the nonces used in the script signature creation and Metadata signature for the swap, refund, and lapse transactions
 * The [script offset] used in both the swap, refund, and lapse transactions
 * The [TariScript] to be used in the Tari UTXO
-* The blinding factor \\(k_i\\) for the Tari UTXO, this can be a Diffie-Hellman between their addresses.
+* The blinding factor \\(k_i\\) for the Tari UTXO, which can be a Diffie-Hellman between their addresses.
 
 
 ### Key selection
 
-Using equal (1), we create the Monero keys as they are multi-party aggregate keys.
+Using (1), we create the Monero keys as they are multi-party aggregate keys.
 
 The [script key] parts for Alice and Bob is constructed as follows:
 
@@ -390,6 +393,8 @@ The Monero key parts for Alice and Bob is constructed as follows:
 
 $$
 \begin{aligned}
+X_a' &= x_a' \cdot M \\\\
+X_b' &= x_b' \cdot M \\\\
 x_a &=  \hash{\hash{X_a' \cat X_b'} \cat X_a' } * x_a' \\\\
 x_b &=  \hash{\hash{X_a' \cat X_b'} \cat X_b' } * x_b' \\\\
 x &= x_a + x_b \\\\
@@ -400,10 +405,12 @@ $$
 
 ### Commitment phase
 
-This phase allows Alice and Bob to commit to using their keys. This phase requires more than one round to complete
-Some of the information that needs to be committed depends on previous knowledge. 
+Similar to method 1, this phase allows Alice and Bob to commit to using their keys and requires more than one round to 
+complete. Some of the information that needs to be committed to depends on previous knowledge. 
 
-Alice needs to provide Bob the following:
+#### Starting values
+
+Alice needs to provide Bob with the following:
 
 * Output commitment \\(C_r\\) of the refund transaction's output
 * Output features  \\( F_r\\) of the refund transaction's output
@@ -414,7 +421,7 @@ Alice needs to provide Bob the following:
 * Public keys: \\( K_{Ssa}'\\), \\( K_{Sra}'\\), \\( K_{Sla}'\\), \\( K_{Osa}'\\), \\( K_{Ora}'\\), \\( K_{Ola}'\\), \\( X_a'\\)
 * Nonces: \\( R_{Ssa}\\), \\( R_{Sra}\\), \\( R_{Sla}\\), \\( R_{Msa}\\), \\( R_{Mra}\\), \\( R_{Mla}\\)
 
-Bob needs to provide Alice the following:
+Bob needs to provide Alice with the following:
 
 * Output commitment \\(C_s\\) of the swap transaction's output
 * Output features  \\( F_s\\) of the swap transaction's output
@@ -422,7 +429,9 @@ Bob needs to provide Alice the following:
 * Public keys: \\( K_{Ssb}'\\), \\( K_{Srb}'\\), \\( K_{Slb}'\\), \\( K_{Osb}'\\), \\( K_{Orb}'\\), \\( K_{Olb}'\\), \\( X_b'\\)
 * Nonces: \\( R_{Ssb}\\), \\( R_{Srb}\\), \\( R_{Slb}\\), \\( R_{Msb}\\), \\( R_{Mrb}\\), \\( R_{Mlb}\\)
 
-After both Alice and Bob have exchanged the variables, they start trading calculated values.
+After Alice and Bob have exchanged the variables, they start trading calculated values. 
+
+#### Construct adaptor signatures and zero knowledge proofs
 
 Alice needs to provide Bob with the following values:
 
@@ -432,7 +441,9 @@ Alice needs to provide Bob with the following values:
 * Monero public key \\(Xm_a\\) on ed25519
 * Zero Knowledge proof for \\(x_a == xm_a\\): \\((R_{ZTa}, R_{ZMa}, s_{Za})\\)
 
-Alice constructs  \\(a_{Sra}\\) and \\(b_{Sra}\\)' with
+Alice constructs the **adaptor signature** of the [input commitment signature](RFC-0201_TariScript.html#transaction-input-changes) 
+parts for the refund transaction ( \\(a_{Sra}\\) and \\(b_{Sra}'\\) ) with:
+
 $$
 \begin{aligned}
 a_{Sra} &= r_{Sra_a} +  e_r(v_{i}) \\\\
@@ -448,7 +459,7 @@ Alice constructs the Zero Knowledge proof for \\(x_a == xm_a\\) with:
 
 $$
 \begin{aligned}
-e = \hash{X_a \cat XM_a \cat R_{ZTa} \cat R_{ZMa}} \\\\
+e = \hash{X_a \cat Xm_a \cat R_{ZTa} \cat R_{ZMa}} \\\\
 s_{ZTa} = r + e(x_a) \\\\
 R_{ZTa} = r \cdot G \\\\
 R_{ZMa} = r \cdot M \\\\
@@ -466,7 +477,10 @@ Bob needs to provide Alice with the following values:
 * Monero public key \\(Xm_b\\) on ed25519
 * Zero Knowledge proof for \\(x_b == xm_b\\):  \\((R_{ZTb}, R_{ZMb}, s_{Zb})\\)
 
-Bob constructs \\(a_{Ssb}\\), \\(b_{Ssb}'\\), \\(a_{Slb}\\) and \\(b_{Slb}'\\) with
+Bob constructs the **adaptor signature** of the [input commitment signature](RFC-0201_TariScript.html#transaction-input-changes) 
+parts for the swap transaction ( \\(a_{Ssb}\\), \\(b_{Ssb}'\\) ) and the lapse transaction 
+( \\(a_{Slb}\\) and \\(b_{Slb}'\\) ) with
+
 $$
 \begin{aligned}
 a_{Ssb} &= r_{Ssb_a} +  e_s(v_{i}) \\\\
@@ -486,13 +500,15 @@ Bob constructs the Zero Knowledge proof for \\(x_b == xm_b\\) with:
 
 $$
 \begin{aligned}
-e = \hash{X_b \cat XM_b \cat R_{ZTb} \cat R_{ZMb}} \\\\
+e = \hash{X_b \cat Xm_b \cat R_{ZTb} \cat R_{ZMb}} \\\\
 s_{Zb} = r + e(x_b) \\\\
 R_{ZTb} = r \cdot G \\\\
 R_{ZMb} = r \cdot M \\\\
 \end{aligned}
 \tag{10}
 $$
+
+#### Verify adaptor signatures and zero knowledge proofs
 
 Alice needs to verify Bob's adaptor signatures with:
 
@@ -504,11 +520,11 @@ a_{Slb} \cdot H + b_{Slb}' \cdot G &= R_{Slb} + (C_i+K_{Slb})*e_l \\\\
 \tag{12}
 $$
 
-Alice needs to verify Bob's Monero public keys with:
+Alice needs to verify Bob's Monero public keys using the zero knowledge proof:
 
 $$
 \begin{aligned}
-e &= \hash{X_b \cat XM_b \cat R_{ZTb} \cat R_{ZMb}} \\\\
+e &= \hash{X_b \cat Xm_b \cat R_{ZTb} \cat R_{ZMb}} \\\\
 s_{Zb} \cdot G &= R_{ZTb} + e(X_b) \\\\
 s_{Zb} \cdot M &= R_{ZMb} + e(Xm_b) \\\\
 \end{aligned}
@@ -524,7 +540,7 @@ a_{Sra} \cdot H + b_{Sra}' \cdot G &= R_{Sra} + (C_i+K_{Sra})*e_r \\\\
 \tag{14}
 $$
 
-Bob needs to verify Alice's Monero public keys with:
+Bob needs to verify Alice's Monero public keys using the zero knowledge proof:
 
 $$
 \begin{aligned}
@@ -535,13 +551,15 @@ s_{Za} \cdot M &= R_{ZMa} + e(Xm_a) \\\\
 \tag{15}
 $$
 
+#### Swap out refund and lapse transactions
+
 If Alice and Bob are happy with the verification, they need to swap out refund and lapse transactions.
 
 Alice needs to provide Bob with the following:
 
-* Script Signature for lapse transaction (\\( (a_{Sla}, b_{Sla}), R_{Sla}\\) )
-* Metadata signature for lapse transaction (\\( b_{Mla}, R_{Mla}\\) )
-* Script offset for lapse transaction \\( \so_{la} \\)
+* [Input commitment signature](RFC-0201_TariScript.html#transaction-input-changes) for lapse transaction (\\( (a_{Sla}, b_{Sla}), R_{Sla}\\) )
+* [Output metadata signature](RFC-0201_TariScript.html#transaction-output-changes) for lapse transaction (\\( b_{Mla}, R_{Mla}\\) )
+* [Script offset](RFC-0201_TariScript.html#script-offset) for lapse transaction \\( \so_{la} \\)
 
 Alice constructs for the lapse transaction signatures.
 $$
@@ -560,9 +578,9 @@ $$
 
 Bob needs to provide Alice with the following:
 
-* Script Signature for refund transaction (\\( (a_{Srb}, b_{Srb}), R_{Srb}\\) )
-* Metadata signature for refund transaction (\\( b_{Mrb}, R_{Mrb}\\) )
-* Script offset for refund transaction \\( \so_{rb} \\)
+* [Input commitment signature](RFC-0201_TariScript.html#transaction-input-changes) for refund transaction (\\( (a_{Srb}, b_{Srb}), R_{Srb}\\) )
+* [Output metadata signature](RFC-0201_TariScript.html#transaction-output-changes) for refund transaction (\\( b_{Mrb}, R_{Mrb}\\) )
+* [Script offset](RFC-0201_TariScript.html#script-offset) for refund transaction \\( \so_{rb} \\)
 
 Bob constructs for the refund transaction signatures.
 $$
@@ -585,25 +603,26 @@ need to publish them at a future date without the other party’s presence.
 
 ### XTR payment
 
-If Alice and Bob are happy with all the committed values. Alice will create a Tari UTXO with the script 
-mentioned above. And because Bob already gave her the required signatures for his part of the refund transaction, Alice 
-can easily compute the required aggregated signatures by adding the parts together so that she has all the 
-knowledge to spend this after the lock expires. 
+If Alice and Bob are happy with all the committed values, Alice will construct the Tari UTXO with the correct 
+[script](#tariscript) and publish the containing transaction to the blockchain. Because Bob already gave her the 
+required signatures for his part of the refund transaction, Alice can easily compute the required aggregated signatures 
+by adding the parts together so that she has all the knowledge to spend this after the lock expires. 
 
 ### XMR Payment
 
-If Bob cab see that Alice has published the Tari UTXO with the correct script, Bob can go ahead and publish the Monero UTXO
-with the aggregate key \\(X = X_a + X_b \\).
+When Bob sees that the Tari UTXO that Alice created is mined on the Tari blockchain with the correct script, he can go 
+ahead and publish the Monero UTXO with the aggregate key \\(Xm = Xm_a + Xm_b \\).
 
 ### Claim XTR 
 
-If Alice can see that Bob published the Monero UTXO to the correct aggregate key \\(X\\). She does not yet have the required
-key \\(x_b \\) to claim the Monero. 
-But she can now provide Bob with the following allowing him to spend the Tari UTXO:
+When Alice sees that the Monero UTXO that Bob created is mined on the Monero blockchain containing the correct aggregate 
+key \\(Xm\\), she can provide Bob with the following allowing him to spend the Tari UTXO:
 
 * Script signature for the swap transaction \\((a_{Ssa}\\, b_{Ssa}), R_{Ssa}\\)
 * Metadata signature for swap transaction \\((b_{Msa}, R_{Msa})\\)
 * Script offset for swap transaction \\( \so_{sa} \\)
+
+She does not have the missing key \\(x_b \\) to claim the Monero yet, but it will be revealed when Bob claims the Tari. 
 
 Alice constructs for the swap transaction.
 $$
@@ -645,7 +664,8 @@ Bob's transaction now has all the required signatures to complete the transactio
 ### Claim XMR
 
 Because Bob has now published the transaction on the Tari blockchain, Alice can calculate the missing Monero key \\(x_b\\)
-this she does with:
+as follows:
+
 $$
 \begin{aligned}
 b_{Ss} &= b_{Ssa} + b_{Ssb} \\\\
@@ -661,10 +681,11 @@ With \\(x_b\\) in hand she can calculate \\(X = x_a + x_b\\) and with this she c
 
 ### The refund
 
-If something goes wrong and Bob never publishes the Monero, or he disappears. Alice needs to wait for the lock height
+If something goes wrong and Bob never publishes the Monero, Alice needs to wait for the lock height
 `height_1` to pass. This will allow her to create the refund transaction to reclaim her Tari.  
 
 Alice constructs the refund transaction with
+
 $$
 \begin{aligned}
 a_{Sra} &= r_{Sra_a} +  e_s(v_{i}) \\\\
@@ -700,7 +721,7 @@ $$
 
 ### The lapse transaction
 
-If something goes wrong and Alice never publishes her refund transition and or she disappears. Bob needs to wait for the
+If something goes wrong and Alice never publishes her refund transition, Bob needs to wait for the
 lock height `height_2` to pass. This will allow him to create the lapse transaction to claim the Tari. 
 
 Bob constructs the lapse transaction with
