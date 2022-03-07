@@ -1353,7 +1353,7 @@ impl tari_rpc::base_node_server::BaseNode for BaseNodeGrpcServer {
         _request: Request<tari_rpc::Empty>,
     ) -> Result<Response<tari_rpc::SyncInfoResponse>, Status> {
         debug!(target: LOG_TARGET, "Incoming GRPC request for BN sync data");
-
+        let status_watch = self.state_machine_handle.get_status_info_watch();
         let response = self
             .state_machine_handle
             .get_status_info_watch()
@@ -1366,6 +1366,7 @@ impl tari_rpc::base_node_server::BaseNode for BaseNodeGrpcServer {
                     tip_height: info.tip_height,
                     local_height: info.local_height,
                     peer_node_id: vec![node_ids],
+                    initial_sync_achieved: (*status_watch.borrow()).bootstrapped,
                 }
             })
             .unwrap_or_default();
@@ -1404,6 +1405,38 @@ impl tari_rpc::base_node_server::BaseNode for BaseNodeGrpcServer {
                 Ok(Response::new(resp))
             },
             None => Err(Status::not_found(format!("Header not found with hash `{}`", hash_hex))),
+        }
+    }
+
+    async fn get_header_by_height(
+        &self,
+        request: Request<tari_rpc::GetHeaderByHeightRequest>,
+    ) -> Result<Response<tari_rpc::BlockHeaderResponse>, Status> {
+        let tari_rpc::GetHeaderByHeightRequest { height } = request.into_inner();
+        let mut node_service = self.node_service.clone();
+        let block = node_service
+            .get_block(height)
+            .await
+            .map_err(|err| Status::internal(err.to_string()))?;
+
+        match block {
+            Some(block) => {
+                let (block, acc_data, confirmations, _) = block.dissolve();
+                let total_block_reward = self
+                    .consensus_rules
+                    .calculate_coinbase_and_fees(block.header.height, block.body.kernels());
+
+                let resp = tari_rpc::BlockHeaderResponse {
+                    difficulty: acc_data.achieved_difficulty.into(),
+                    num_transactions: block.body.kernels().len() as u32,
+                    confirmations,
+                    header: Some(block.header.into()),
+                    reward: total_block_reward.into(),
+                };
+
+                Ok(Response::new(resp))
+            },
+            None => Err(Status::not_found(format!("Header not found with height `{}`", height))),
         }
     }
 
