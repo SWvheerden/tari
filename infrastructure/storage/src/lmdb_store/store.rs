@@ -1,9 +1,16 @@
 //! An ergonomic, multithreaded API for an LMDB datastore
 
-use crate::lmdb_store::error::LMDBError;
+use std::{
+    cmp::max,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
 use lmdb_zero::{
     db,
-    error::{self, LmdbResultExt},
+    error,
+    error::LmdbResultExt,
     open,
     put,
     traits::AsLmdbBytes,
@@ -22,24 +29,80 @@ use lmdb_zero::{
     WriteTransaction,
 };
 use log::*;
-use std::{cmp::max, collections::HashMap, path::Path, sync::Arc};
+use serde::{de::DeserializeOwned, Serialize};
+
+use crate::{
+    key_val_store::{error::KeyValStoreError, key_val_store::IterationResult},
+    lmdb_store::error::LMDBError,
+};
 
 const LOG_TARGET: &str = "lmdb";
+const BYTES_PER_MB: usize = 1024 * 1024;
 
 /// An atomic pointer to an LMDB database instance
-type DatabaseRef = Arc<Database<'static>>;
+pub type DatabaseRef = Arc<Database<'static>>;
+
+#[derive(Debug, Clone)]
+pub struct LMDBConfig {
+    init_size_bytes: usize,
+    grow_size_bytes: usize,
+    resize_threshold_bytes: usize,
+}
+
+impl LMDBConfig {
+    /// Specify LMDB config in bytes.
+    pub fn new(init_size_bytes: usize, grow_size_bytes: usize, resize_threshold_bytes: usize) -> Self {
+        Self {
+            init_size_bytes,
+            grow_size_bytes,
+            resize_threshold_bytes,
+        }
+    }
+
+    /// Specify LMDB config in megabytes.
+    pub fn new_from_mb(init_size_mb: usize, grow_size_mb: usize, resize_threshold_mb: usize) -> Self {
+        Self {
+            init_size_bytes: init_size_mb * BYTES_PER_MB,
+            grow_size_bytes: grow_size_mb * BYTES_PER_MB,
+            resize_threshold_bytes: resize_threshold_mb * BYTES_PER_MB,
+        }
+    }
+
+    /// Get the initial size of the LMDB environment in bytes.
+    pub fn init_size_bytes(&self) -> usize {
+        self.init_size_bytes
+    }
+
+    /// Get the grow size of the LMDB environment in bytes. The LMDB environment will be resized by this amount when
+    /// `resize_threshold_bytes` are left.
+    pub fn grow_size_bytes(&self) -> usize {
+        self.grow_size_bytes
+    }
+
+    /// Get the resize threshold in bytes. The LMDB environment will be resized when this much free space is left.
+    pub fn resize_threshold_bytes(&self) -> usize {
+        self.resize_threshold_bytes
+    }
+}
+
+impl Default for LMDBConfig {
+    fn default() -> Self {
+        Self::new_from_mb(16, 16, 4)
+    }
+}
 
 /// A builder for [LMDBStore](struct.lmdbstore.html)
 /// ## Example
 ///
-/// Create a new LMDB database of 500MB in the `db` directory with two named databases: "db1" and "db2"
+/// Create a new LMDB database of 64MB in the `db` directory with two named databases: "db1" and "db2"
 ///
 /// ```
-/// # use tari_storage::lmdb_store::LMDBBuilder;
+/// # use tari_storage::lmdb_store::{LMDBBuilder, LMDBConfig};
 /// # use lmdb_zero::db;
+/// # use std::env;
 /// let mut store = LMDBBuilder::new()
-///     .set_path("/tmp/")
-///     .set_environment_size(500)
+///     .set_path(env::temp_dir())
+///     .set_env_config(LMDBConfig::default())
 ///     .set_max_number_of_databases(10)
 ///     .add_database("db1", db::CREATE)
 ///     .add_database("db2", db::CREATE)
@@ -47,10 +110,11 @@ type DatabaseRef = Arc<Database<'static>>;
 ///     .unwrap();
 /// ```
 pub struct LMDBBuilder {
-    path: String,
-    db_size_mb: usize,
+    path: PathBuf,
+    env_flags: open::Flags,
     max_dbs: usize,
     db_names: HashMap<String, db::Flags>,
+    env_config: LMDBConfig,
 }
 
 impl LMDBBuilder {
@@ -60,32 +124,29 @@ impl LMDBBuilder {
     /// | Parameter | Default |
     /// |:----------|---------|
     /// | path      | ./store/|
-    /// | size      | 64 MB   |
     /// | named DBs | none    |
     pub fn new() -> LMDBBuilder {
-        LMDBBuilder {
-            path: "./store/".into(),
-            db_size_mb: 64,
-            db_names: HashMap::new(),
-            max_dbs: 8,
-        }
+        Default::default()
     }
 
     /// Set the directory where the LMDB database exists, or must be created.
     /// Note: The directory must exist already; it is not created for you. If it does not exist, `build()` will
     /// return `LMDBError::InvalidPath`.
-    pub fn set_path(mut self, path: &str) -> LMDBBuilder {
-        self.path = path.into();
-        if !self.path.ends_with("/") {
-            self.path += "/";
-        }
+    pub fn set_path<P: AsRef<Path>>(mut self, path: P) -> LMDBBuilder {
+        self.path = path.as_ref().to_owned();
         self
     }
 
-    /// Sets the size of the environment, in MB.
+    /// Set environment flags
+    pub fn set_env_flags(mut self, flags: open::Flags) -> LMDBBuilder {
+        self.env_flags = flags;
+        self
+    }
+
+    /// Sets the parameters of the LMDB environment.
     /// The actual memory will only be allocated when #build() is called
-    pub fn set_environment_size(mut self, size: usize) -> LMDBBuilder {
-        self.db_size_mb = size;
+    pub fn set_env_config(mut self, config: LMDBConfig) -> LMDBBuilder {
+        self.env_config = config;
         self
     }
 
@@ -107,41 +168,64 @@ impl LMDBBuilder {
     /// Create a new LMDBStore instance and open the underlying database environment
     pub fn build(mut self) -> Result<LMDBStore, LMDBError> {
         let max_dbs = max(self.db_names.len(), self.max_dbs) as u32;
-        let path = Path::new(&self.path);
-        if !path.exists() {
+        if !self.path.exists() {
             return Err(LMDBError::InvalidPath);
         }
-        let path = if let Some(path) = path.to_str() {
-            path.to_string()
-        } else {
-            return Err(LMDBError::InvalidPath);
-        };
+        let path = self.path.to_str().map(String::from).ok_or(LMDBError::InvalidPath)?;
+
         let env = unsafe {
             let mut builder = EnvBuilder::new()?;
-            builder.set_mapsize(self.db_size_mb * 1024 * 1024)?;
+            builder.set_mapsize(self.env_config.init_size_bytes)?;
             builder.set_maxdbs(max_dbs)?;
-            builder.open(&self.path, open::Flags::empty(), 0o600)?
+            // Always include NOTLS flag since we know that we're using this with tokio
+            let flags = self.env_flags | open::NOTLS;
+            let env = builder.open(&path, flags, 0o600)?;
+            // SAFETY: no transactions can be open at this point
+            LMDBStore::resize_if_required(&env, &self.env_config)?;
+            Arc::new(env)
         };
-        let env = Arc::new(env);
-        info!(
+
+        debug!(
             target: LOG_TARGET,
-            "({}) LMDB environment created with a capacity of {} MB.", path, self.db_size_mb
+            "({}) LMDB environment created with a capacity of {} MB, {} MB remaining.",
+            path,
+            env.info()?.mapsize / BYTES_PER_MB,
+            (env.info()?.mapsize - env.stat()?.psize as usize * env.info()?.last_pgno) / BYTES_PER_MB,
         );
+
         let mut databases: HashMap<String, LMDBDatabase> = HashMap::new();
-        if self.db_names.len() == 0 {
+        if self.db_names.is_empty() {
             self = self.add_database("default", db::CREATE);
         }
         for (name, flags) in self.db_names.iter() {
             let db = Database::open(env.clone(), Some(name), &DatabaseOptions::new(*flags))?;
             let db = LMDBDatabase {
                 name: name.to_string(),
+                env_config: self.env_config.clone(),
                 env: env.clone(),
                 db: Arc::new(db),
             };
             databases.insert(name.to_string(), db);
-            info!(target: LOG_TARGET, "({}) LMDB database '{}' is ready", path, name);
+            trace!(target: LOG_TARGET, "({}) LMDB database '{}' is ready", path, name);
         }
-        Ok(LMDBStore { path, env, databases })
+        Ok(LMDBStore {
+            path,
+            env_config: self.env_config,
+            env,
+            databases,
+        })
+    }
+}
+
+impl Default for LMDBBuilder {
+    fn default() -> Self {
+        Self {
+            path: "./store/".into(),
+            env_flags: open::Flags::empty(),
+            db_names: HashMap::new(),
+            max_dbs: 8,
+            env_config: LMDBConfig::default(),
+        }
     }
 }
 
@@ -201,7 +285,7 @@ impl LMDBBuilder {
 ///
 /// ## Serialisation
 ///
-/// The ideal serialiasation format is the one that does the least "bit-twiddling" between memory and the byte array;
+/// The ideal serialisation format is the one that does the least "bit-twiddling" between memory and the byte array;
 /// as well as being as compact as possible.
 ///
 /// Candidates include: Bincode, MsgPack, and Protobuf / Cap'nProto. Without spending ages on a comparison, I just
@@ -251,18 +335,19 @@ impl LMDBBuilder {
 /// So after all this, we'll use bincode for the time being to handle serialisation to- and from- LMDB
 pub struct LMDBStore {
     path: String,
-    pub(crate) env: Arc<Environment>,
-    pub(crate) databases: HashMap<String, LMDBDatabase>,
+    env_config: LMDBConfig,
+    env: Arc<Environment>,
+    databases: HashMap<String, LMDBDatabase>,
 }
 
-/// Close all databases and close the environment. You cannot be guaranteed that the dbs will be closed after calling
-/// this function because there still may be threads accessing / writing to a database that will block this call.
-/// However, in that case `shutdown` returns an error.
 impl LMDBStore {
+    /// Close all databases and close the environment. You cannot be guaranteed that the dbs will be closed after
+    /// calling this function because there still may be threads accessing / writing to a database that will block
+    /// this call. However, in that case `shutdown` returns an error.
     pub fn flush(&self) -> Result<(), lmdb_zero::error::Error> {
-        debug!(target: LOG_TARGET, "Forcing flush of buffers to disk");
+        trace!(target: LOG_TARGET, "Forcing flush of buffers to disk");
         self.env.sync(true)?;
-        debug!(target: LOG_TARGET, "Buffers have been flushed");
+        debug!(target: LOG_TARGET, "LMDB Buffers have been flushed");
         Ok(())
     }
 
@@ -275,8 +360,8 @@ impl LMDBStore {
                 e.to_string()
             ),
             Ok(info) => {
-                let size_mb = info.mapsize / 1024 / 1024;
-                info!(
+                let size_mb = info.mapsize / BYTES_PER_MB;
+                debug!(
                     target: LOG_TARGET,
                     "LMDB Environment information ({}). Map Size={} MB. Last page no={}. Last tx id={}",
                     self.path,
@@ -295,7 +380,7 @@ impl LMDBStore {
             ),
             Ok(stats) => {
                 let page_size = stats.psize / 1024;
-                info!(
+                debug!(
                     target: LOG_TARGET,
                     "LMDB Environment statistics ({}). Page size={}kB. Tree depth={}. Branch pages={}. Leaf Pages={}, \
                      Overflow pages={}, Entries={}",
@@ -313,16 +398,78 @@ impl LMDBStore {
 
     /// Returns a handle to the database given in `db_name`, if it exists, otherwise return None.
     pub fn get_handle(&self, db_name: &str) -> Option<LMDBDatabase> {
-        match self.databases.get(db_name) {
-            Some(db) => Some(db.clone()),
-            None => None,
+        self.databases.get(db_name).cloned()
+    }
+
+    pub fn env_config(&self) -> LMDBConfig {
+        self.env_config.clone()
+    }
+
+    pub fn env(&self) -> Arc<Environment> {
+        self.env.clone()
+    }
+
+    /// Resize the LMDB environment if remaining mapsize is less than the configured resize threshold.
+    ///
+    /// # Safety
+    /// This may only be called if no write transactions are active in the current process. Note that the library does
+    /// not check for this condition, the caller must ensure it explicitly.
+    ///
+    /// http://www.lmdb.tech/doc/group__mdb.html#gaa2506ec8dab3d969b0e609cd82e619e5
+    pub unsafe fn resize_if_required(env: &Environment, config: &LMDBConfig) -> Result<(), LMDBError> {
+        let env_info = env.info()?;
+        let stat = env.stat()?;
+        let size_used_bytes = stat.psize as usize * env_info.last_pgno;
+        let size_left_bytes = env_info.mapsize - size_used_bytes;
+        debug!(
+            target: LOG_TARGET,
+            "Resize check: Used bytes: {}, Remaining bytes: {}", size_used_bytes, size_left_bytes
+        );
+
+        if size_left_bytes <= config.resize_threshold_bytes {
+            Self::resize(env, config)?;
+            debug!(
+                target: LOG_TARGET,
+                "({}) LMDB size used {:?} MB, environment space left {:?} MB, increased by {:?} MB",
+                env.path()?.to_str()?,
+                size_used_bytes / BYTES_PER_MB,
+                size_left_bytes / BYTES_PER_MB,
+                config.grow_size_bytes / BYTES_PER_MB,
+            );
         }
+        Ok(())
+    }
+
+    /// Grows the LMDB environment by the configured amount
+    ///
+    /// # Safety
+    /// This may only be called if no write transactions are active in the current process. Note that the library does
+    /// not check for this condition, the caller must ensure it explicitly.
+    ///
+    /// http://www.lmdb.tech/doc/group__mdb.html#gaa2506ec8dab3d969b0e609cd82e619e5
+    pub unsafe fn resize(env: &Environment, config: &LMDBConfig) -> Result<(), LMDBError> {
+        let env_info = env.info()?;
+        let current_mapsize = env_info.mapsize;
+        env.set_mapsize(current_mapsize + config.grow_size_bytes)?;
+        let env_info = env.info()?;
+        let new_mapsize = env_info.mapsize;
+        debug!(
+            target: LOG_TARGET,
+            "({}) LMDB MB, mapsize was grown from {:?} MB to {:?} MB, increased by {:?} MB",
+            env.path()?.to_str()?,
+            current_mapsize / BYTES_PER_MB,
+            new_mapsize / BYTES_PER_MB,
+            config.grow_size_bytes / BYTES_PER_MB,
+        );
+
+        Ok(())
     }
 }
 
 #[derive(Clone)]
 pub struct LMDBDatabase {
     name: String,
+    env_config: LMDBConfig,
     env: Arc<Environment>,
     db: DatabaseRef,
 }
@@ -333,16 +480,43 @@ impl LMDBDatabase {
     pub fn insert<K, V>(&self, key: &K, value: &V) -> Result<(), LMDBError>
     where
         K: AsLmdbBytes + ?Sized,
-        V: serde::Serialize,
+        V: Serialize,
     {
-        let env = self.db.env().clone();
+        const MAX_RESIZES: usize = 5;
+        let value = LMDBWriteTransaction::convert_value(value)?;
+        for _ in 0..MAX_RESIZES {
+            match self.write(key, &value) {
+                Ok(txn) => return Ok(txn),
+                Err(error::Error::Code(error::MAP_FULL)) => {
+                    info!(
+                        target: LOG_TARGET,
+                        "Failed to obtain write transaction because the database needs to be resized"
+                    );
+                    // SAFETY: We know that there are no open transactions at this point because ...
+                    // TODO: we don't guarantee this here but it works because the caller does this.
+                    unsafe {
+                        LMDBStore::resize(&self.env, &self.env_config)?;
+                    }
+                },
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        // Failed to resize
+        Err(error::Error::Code(error::MAP_FULL).into())
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn write<K>(&self, key: &K, value: &Vec<u8>) -> Result<(), lmdb_zero::Error>
+    where K: AsLmdbBytes + ?Sized {
+        let env = self.db.env();
         let tx = WriteTransaction::new(env)?;
         {
             let mut accessor = tx.access();
-            let buf = LMDBWriteTransaction::convert_value(value, 512)?;
-            accessor.put(&*self.db, key, &buf, put::Flags::empty())?;
+            accessor.put(&*self.db, key, value, put::Flags::empty())?;
         }
-        tx.commit().map_err(LMDBError::from)
+        tx.commit()?;
+        Ok(())
     }
 
     /// Get a value from the database. This is an atomic operation. A read transaction is created, the value
@@ -352,9 +526,9 @@ impl LMDBDatabase {
     pub fn get<K, V>(&self, key: &K) -> Result<Option<V>, LMDBError>
     where
         K: AsLmdbBytes + ?Sized,
-        for<'t> V: serde::de::DeserializeOwned, // read this as, for *any* lifetime, t, we can convert a [u8] to V
+        for<'t> V: DeserializeOwned, // read this as, for *any* lifetime, t, we can convert a [u8] to V
     {
-        let env = self.db.env().clone();
+        let env = &(*self.db.env());
         let txn = ReadTransaction::new(env)?;
         let accessor = txn.access();
         let val = accessor.get(&self.db, key).to_opt();
@@ -363,10 +537,8 @@ impl LMDBDatabase {
 
     /// Return statistics about the database, See [Stat](lmdb_zero/struct.Stat.html) for more details.
     pub fn get_stats(&self) -> Result<Stat, LMDBError> {
-        let env = self.db.env().clone();
-        ReadTransaction::new(env)
-            .and_then(|txn| txn.db_stat(&self.db))
-            .map_err(LMDBError::DatabaseError)
+        let env = &(*self.db.env());
+        Ok(ReadTransaction::new(env).and_then(|txn| txn.db_stat(&self.db))?)
     }
 
     /// Log some pretty printed stats.See [Stat](lmdb_zero/struct.Stat.html) for more details.
@@ -380,7 +552,7 @@ impl LMDBDatabase {
             ),
             Ok(stats) => {
                 let page_size = stats.psize / 1024;
-                info!(
+                debug!(
                     target: LOG_TARGET,
                     "LMDB Database statistics ({}). Page size={}kB. Tree depth={}. Branch pages={}. Leaf Pages={}, \
                      Overflow pages={}, Entries={}",
@@ -396,9 +568,14 @@ impl LMDBDatabase {
         }
     }
 
+    /// Returns if the database is empty.
+    pub fn is_empty(&self) -> Result<bool, LMDBError> {
+        self.get_stats().map(|s| s.entries > 0)
+    }
+
     /// Returns the total number of entries in this database.
-    pub fn size(&self) -> Result<usize, LMDBError> {
-        self.get_stats().and_then(|s| Ok(s.entries))
+    pub fn len(&self) -> Result<usize, LMDBError> {
+        self.get_stats().map(|s| s.entries)
     }
 
     /// Execute function `f` for each value in the database.
@@ -406,45 +583,49 @@ impl LMDBDatabase {
     /// The underlying LMDB library does not permit database cursors to be returned from functions to preserve Rust
     /// memory guarantees, so this is the closest thing to an iterator that you're going to get :/
     ///
-    /// `f` is a closure of form `|pair: Result<(K,V), LMDBError>| -> ()`. You will usually need to include type
-    /// inference to let Rust know which type to deserialise to:
+    /// `f` is a closure of form `|pair: Result<(K,V), LMDBError>| -> IterationResult`. If `IterationResult::Break` is
+    /// returned the closure will not be called again and `for_each` will return. You will usually need to include
+    /// type inference to let Rust know which type to deserialise to:
     /// ```nocompile
-    ///    let res = db.for_each_pair::<Key, User, _>(|pair| {
+    ///    let res = db.for_each::<Key, User, _>(|pair| {
     ///        let (key, user) = pair.unwrap();
     ///        //.. do stuff with key and user..
     ///    });
     pub fn for_each<K, V, F>(&self, mut f: F) -> Result<(), LMDBError>
     where
-        K: serde::de::DeserializeOwned,
-        V: serde::de::DeserializeOwned,
-        F: FnMut(Result<(K, V), LMDBError>),
+        K: DeserializeOwned,
+        V: DeserializeOwned,
+        F: FnMut(Result<(K, V), KeyValStoreError>) -> IterationResult,
     {
         let env = self.env.clone();
         let db = self.db.clone();
-        let txn = ReadTransaction::new(env).map_err(LMDBError::DatabaseError)?;
+        let txn = ReadTransaction::new(env)?;
 
         let access = txn.access();
-        let cursor = txn.cursor(db).map_err(LMDBError::DatabaseError)?;
+        let cursor = txn.cursor(db)?;
 
         let head = |c: &mut Cursor, a: &ConstAccessor| {
-            let (key_bytes, val_bytes) = c.first::<[u8], [u8]>(a)?;
+            let (key_bytes, val_bytes) = c.first(a)?;
             ReadOnlyIterator::deserialize::<K, V>(key_bytes, val_bytes)
         };
 
         let cursor = MaybeOwned::Owned(cursor);
-        let iter = CursorIter::new(cursor, &access, head, ReadOnlyIterator::next).map_err(LMDBError::DatabaseError)?;
+        let iter = CursorIter::new(cursor, &access, head, ReadOnlyIterator::next)?;
 
         for p in iter {
-            f(p.map_err(LMDBError::DatabaseError));
+            match f(p.map_err(|e| KeyValStoreError::DatabaseError(e.to_string()))) {
+                IterationResult::Break => break,
+                IterationResult::Continue => {},
+            }
         }
 
         Ok(())
     }
 
     /// Checks whether a key exists in this database
-    pub fn exists<K>(&self, key: &K) -> Result<bool, LMDBError>
+    pub fn contains_key<K>(&self, key: &K) -> Result<bool, LMDBError>
     where K: AsLmdbBytes + ?Sized {
-        let txn = ReadTransaction::new(self.db.env().clone())?;
+        let txn = ReadTransaction::new(&(*self.db.env()))?;
         let accessor = txn.access();
         let res: error::Result<&Ignore> = accessor.get(&self.db, key);
         let res = res.to_opt()?.is_some();
@@ -452,29 +633,24 @@ impl LMDBDatabase {
     }
 
     /// Delete a record associated with `key` from the database. If the key is not found,
-    pub fn delete<K>(&self, key: &K) -> Result<(), LMDBError>
+    pub fn remove<K>(&self, key: &K) -> Result<(), LMDBError>
     where K: AsLmdbBytes + ?Sized {
-        let tx = WriteTransaction::new(self.db.env().clone())?;
+        let tx = WriteTransaction::new(&(*self.db.env()))?;
         {
             let mut accessor = tx.access();
             accessor.del_key(&self.db, key)?;
         }
-        tx.commit().map_err(|e| e.into())
+        tx.commit().map_err(Into::into)
     }
 
     /// Create a read-only transaction on the current database and execute the instructions given in the closure. The
-    /// transaction is automatically committed when the closure goes out of scope. You may provide the results of the
-    /// transaction to the calling scope by populating a `Vec<V>` with the results of `txn.get(k)`. Otherwise, if the
-    /// results are not needed, or you did not call `get`, just return `Ok(None)`.
-    pub fn with_read_transaction<F, V>(&self, f: F) -> Result<Option<Vec<V>>, LMDBError>
-    where
-        V: serde::de::DeserializeOwned,
-        F: FnOnce(LMDBReadTransaction) -> Result<Option<Vec<V>>, LMDBError>,
-    {
+    /// transaction is automatically committed when the closure goes out of scope.
+    pub fn with_read_transaction<F, R>(&self, f: F) -> Result<R, LMDBError>
+    where F: FnOnce(LMDBReadTransaction) -> R {
         let txn = ReadTransaction::new(self.env.clone())?;
         let access = txn.access();
         let wrapper = LMDBReadTransaction { db: &self.db, access };
-        f(wrapper)
+        Ok(f(wrapper))
     }
 
     /// Create a transaction with write access on the current table.
@@ -485,6 +661,11 @@ impl LMDBDatabase {
         let wrapper = LMDBWriteTransaction { db: &self.db, access };
         f(wrapper)?;
         txn.commit().map_err(|e| LMDBError::CommitError(e.to_string()))
+    }
+
+    /// Returns an owned atomic reference to the database
+    pub fn db(&self) -> DatabaseRef {
+        self.db.clone()
     }
 }
 
@@ -506,7 +687,7 @@ impl ReadOnlyIterator {
         K: serde::de::DeserializeOwned,
         V: serde::de::DeserializeOwned,
     {
-        let (key_bytes, val_bytes) = c.next::<[u8], [u8]>(access)?;
+        let (key_bytes, val_bytes) = c.next(access)?;
         ReadOnlyIterator::deserialize(key_bytes, val_bytes)
     }
 }
@@ -523,14 +704,14 @@ impl<'txn, 'db: 'txn> LMDBReadTransaction<'txn, 'db> {
         K: AsLmdbBytes + ?Sized,
         for<'t> V: serde::de::DeserializeOwned, // read this as, for *any* lifetime, t, we can convert a [u8] to V
     {
-        let val = self.access.get(&self.db, key).to_opt();
+        let val = self.access.get(self.db, key).to_opt();
         LMDBReadTransaction::convert_value(val)
     }
 
     /// Checks whether a key exists in this database
     pub fn exists<K>(&self, key: &K) -> Result<bool, LMDBError>
     where K: AsLmdbBytes + ?Sized {
-        let res: error::Result<&Ignore> = self.access.get(&self.db, key);
+        let res: error::Result<&Ignore> = self.access.get(self.db, key);
         let res = res.to_opt()?.is_some();
         Ok(res)
     }
@@ -540,7 +721,7 @@ impl<'txn, 'db: 'txn> LMDBReadTransaction<'txn, 'db> {
     {
         match val {
             Ok(None) => Ok(None),
-            Err(e) => Err(LMDBError::GetError(format!("LMDB get error: {}", e.to_string()))),
+            Err(e) => Err(LMDBError::GetError(format!("LMDB get error: {}", e))),
             Ok(Some(v)) => match bincode::deserialize(v) {
                 // The reference to v is about to be dropped, so we must copy the data now
                 Ok(val) => Ok(Some(val)),
@@ -561,28 +742,51 @@ impl<'txn, 'db: 'txn> LMDBWriteTransaction<'txn, 'db> {
         K: AsLmdbBytes + ?Sized,
         V: serde::Serialize,
     {
-        let buf = LMDBWriteTransaction::convert_value(value, 512)?;
-        self.access.put(&self.db, key, &buf, put::Flags::empty())?;
+        let buf = Self::convert_value(value)?;
+        self.access.put(self.db, key, &buf, put::Flags::empty())?;
         Ok(())
     }
 
     /// Checks whether a key exists in this database
     pub fn exists<K>(&self, key: &K) -> Result<bool, LMDBError>
     where K: AsLmdbBytes + ?Sized {
-        let res: error::Result<&Ignore> = self.access.get(&self.db, key);
+        let res: error::Result<&Ignore> = self.access.get(self.db, key);
         let res = res.to_opt()?.is_some();
         Ok(res)
     }
 
     pub fn delete<K>(&mut self, key: &K) -> Result<(), LMDBError>
     where K: AsLmdbBytes + ?Sized {
-        self.access.del_key(&self.db, key).map_err(LMDBError::DatabaseError)
+        Ok(self.access.del_key(self.db, key)?)
     }
 
-    fn convert_value<V>(value: &V, size_estimate: usize) -> Result<Vec<u8>, LMDBError>
+    fn convert_value<V>(value: &V) -> Result<Vec<u8>, LMDBError>
     where V: serde::Serialize {
-        let mut buf = Vec::with_capacity(size_estimate);
+        let size = bincode::serialized_size(value).map_err(|e| LMDBError::SerializationErr(e.to_string()))?;
+        let mut buf = Vec::with_capacity(size as usize);
         bincode::serialize_into(&mut buf, value).map_err(|e| LMDBError::SerializationErr(e.to_string()))?;
         Ok(buf)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::env;
+
+    use lmdb_zero::db;
+
+    use crate::lmdb_store::{LMDBBuilder, LMDBConfig};
+
+    #[test]
+    fn test_lmdb_builder() {
+        let store = LMDBBuilder::new()
+            .set_path(env::temp_dir())
+            .set_env_config(LMDBConfig::default())
+            .set_max_number_of_databases(10)
+            .add_database("db1", db::CREATE)
+            .add_database("db2", db::CREATE)
+            .build()
+            .unwrap();
+        assert_eq!(store.databases.len(), 2);
     }
 }

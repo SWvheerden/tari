@@ -1,23 +1,69 @@
 [package]
 name = "tari_wallet"
-version = "0.0.2"
+authors = ["The Tari Development Community"]
+description = "Tari cryptocurrency wallet library"
+license = "BSD-3-Clause"
+version = "0.28.1"
 edition = "2018"
 
 [dependencies]
-tari_core = { path = "../core", version="^0.0"}
-tari_crypto = { path = "../../infrastructure/crypto", version = "^0.0" }
-tari_utilities = { path = "../../infrastructure/tari_util", version = "^0.0"}
-tari_comms = { path = "../../comms", version = "^0.0"}
-tari_p2p = {path = "../p2p", version = "^0.0"}
-chrono = { version = "0.4.6", features = ["serde"]}
-derive-error = "0.0.4"
-digest = "0.8.0"
-serde = {version = "1.0.89", features = ["derive"] }
+tari_common = { path = "../../common" }
+tari_common_types = { version = "^0.28", path = "../../base_layer/common_types" }
+tari_comms = { version = "^0.28", path = "../../comms" }
+tari_comms_dht = { version = "^0.28", path = "../../comms/dht" }
+tari_crypto = { git = "https://github.com/tari-project/tari-crypto.git", branch = "main" }
+tari_key_manager = { version = "^0.28", path = "../key_manager" }
+tari_p2p = { version = "^0.28", path = "../p2p", features = ["auto-update"] }
+tari_service_framework = { version = "^0.28", path = "../service_framework" }
+tari_shutdown = { version = "^0.28", path = "../../infrastructure/shutdown" }
+tari_storage = { version = "^0.28", path = "../../infrastructure/storage" }
+tari_common_sqlite = { path = "../../common_sqlite" }
+tari_utilities = "0.3.0"
+
+aes-gcm = "^0.8"
+async-trait = "0.1.50"
+argon2 = "0.2"
+bincode = "1.3.1"
+blake2 = "0.9.0"
+sha2 = "0.9.5"
+chrono = { version = "0.4.19", default-features = false, features = ["serde"] }
+clear_on_drop = "=0.2.4"
 crossbeam-channel = "0.3.8"
+diesel = { version = "1.4.7", features = ["sqlite", "serde_json", "chrono"] }
+diesel_migrations = "1.4.0"
+digest = "0.9.0"
+fs2 = "0.3.0"
+futures = { version = "^0.3.1", features = ["compat", "std"] }
+libsqlite3-sys = { version = ">=0.8.0, <0.13.0", features = ["bundled"], optional = true }
+lmdb-zero = "0.4.4"
 log = "0.4.6"
+log4rs = { version = "1.0.0", features = ["console_appender", "file_appender", "yaml_format"] }
+rand = "0.8"
+serde = { version = "1.0.89", features = ["derive"] }
+serde_json = "1.0.39"
+strum = "0.22"
+strum_macros = "0.22"
+tempfile = "3.1.0"
+thiserror = "1.0.26"
+tokio = { version = "1.11", features = ["sync", "macros"] }
+tower = "0.4"
+prost = "0.9"
+
+[dependencies.tari_core]
+path = "../../base_layer/core"
+version = "^0.28"
+default-features = false
+features = ["transactions", "mempool_proto", "base_node_proto", ]
 
 [dev-dependencies]
-rand = "0.5"
-simple_logger = "1.3.0"
-tari_storage = { version = "0.0.2", path = "../../infrastructure/storage"}
+tari_p2p = { version = "^0.28", path = "../p2p", features = ["test-mocks"] }
+tari_comms_dht = { version = "^0.28", path = "../../comms/dht", features = ["test-mocks"] }
+tari_test_utils = { version = "^0.28", path = "../../infrastructure/test_utils" }
+env_logger = "0.7.1"
+prost = "0.9.0"
 
+[features]
+default=["bundled_sqlite"]
+c_integration = []
+avx2 = ["tari_crypto/avx2", "tari_core/avx2"]
+bundled_sqlite = ["libsqlite3-sys"]

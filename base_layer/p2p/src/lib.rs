@@ -20,10 +20,40 @@
 //  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 //  USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#![cfg_attr(not(debug_assertions), deny(unused_variables))]
+#![cfg_attr(not(debug_assertions), deny(unused_imports))]
+#![cfg_attr(not(debug_assertions), deny(dead_code))]
+#![cfg_attr(not(debug_assertions), deny(unused_extern_crates))]
+#![deny(unused_must_use)]
+#![deny(unreachable_patterns)]
+#![deny(unknown_lints)]
+
+#[cfg(test)]
 #[macro_use]
-mod macros;
+mod test_utils;
+
+#[cfg(feature = "auto-update")]
+pub mod auto_update;
+pub mod comms_connector;
+pub mod domain_message;
 pub mod initialization;
 pub mod peer;
-pub mod ping_pong;
+pub mod peer_seeds;
+pub mod proto;
 pub mod services;
 pub mod tari_message;
+pub mod transport;
+
+mod dns;
+
+// Re-export
+pub use tari_common::configuration::Network;
+
+/// Default DNS resolver set to cloudflare's private 1.1.1.1 resolver
+pub const DEFAULT_DNS_NAME_SERVER: &str = "1.1.1.1:853/cloudflare-dns.com";
+
+/// Major network version. Peers will refuse connections if this value differs
+pub const MAJOR_NETWORK_VERSION: u8 = 0;
+/// Minor network version. This should change with each time the network protocol has changed in a backward-compatible
+/// way.
+pub const MINOR_NETWORK_VERSION: u8 = 0;

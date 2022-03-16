@@ -66,10 +66,11 @@ fi
 mkdir $build_dir
 mkdir -p $report_dir
 
-echo "Build project.."
+echo "Setup project.."
 export CARGO_INCREMENTAL=0
-export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads"
-cargo +nightly build -q $CARGO_OPTIONS
+export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off"
+echo "Build project.."
+cargo +nightly build $CARGO_OPTIONS
 
 echo "Perform project Tests.."
 cargo_filename="Cargo.toml"
@@ -84,7 +85,7 @@ zip $ccov_path `find $build_dir \( -name "$member_crate_name*.gc*" \) -print`;
 echo "Perform grcov code coverage.."
 lcov_filename="lcov.info"
 lcov_path="$report_dir$lcov_filename"
-grcov $ccov_path -s . -t lcov --llvm --branch --ignore-not-existing --ignore-dir "/*" > $lcov_path;
+grcov $ccov_path -s . -t lcov --llvm --branch --ignore-not-existing --ignore "/*" > $lcov_path;
 
 echo "Generate report from code coverage.."
 local_lcov_path="$report_dir$lcov_filename"

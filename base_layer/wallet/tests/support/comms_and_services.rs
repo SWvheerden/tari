@@ -21,63 +21,74 @@
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 use std::{sync::Arc, time::Duration};
-use tari_comms::{
-    connection::{net_address::NetAddressWithStats, NetAddress, NetAddressesWithStats},
-    connection_manager::PeerConnectionConfig,
-    control_service::ControlServiceConfig,
-    peer_manager::{peer::PeerFlags, NodeId, NodeIdentity, Peer},
-    types::CommsPublicKey,
-    CommsBuilder,
-};
-use tari_p2p::{
-    services::{ServiceExecutor, ServiceRegistry},
-    tari_message::{NetMessage, TariMessageType},
-};
-use tari_wallet::text_message_service::{TextMessageService, TextMessageServiceApi};
 
-fn create_peer(public_key: CommsPublicKey, net_address: NetAddress) -> Peer {
-    Peer::new(
-        public_key.clone(),
-        NodeId::from_key(&public_key).unwrap(),
-        NetAddressesWithStats::new(vec![NetAddressWithStats::new(net_address.clone())]),
-        PeerFlags::empty(),
-    )
+use tari_comms::{
+    message::MessageTag,
+    multiaddr::Multiaddr,
+    peer_manager::{NodeId, NodeIdentity, Peer, PeerFeatures, PeerFlags},
+    transports::MemoryTransport,
+    types::CommsPublicKey,
+    CommsNode,
+};
+use tari_comms_dht::{envelope::DhtMessageHeader, Dht, DhtProtocolVersion};
+use tari_p2p::{
+    comms_connector::InboundDomainConnector,
+    domain_message::DomainMessage,
+    initialization::initialize_local_test_comms,
+};
+use tari_shutdown::ShutdownSignal;
+
+pub fn get_next_memory_address() -> Multiaddr {
+    let port = MemoryTransport::acquire_next_memsocket_port();
+    format!("/memory/{}", port).parse().unwrap()
 }
 
-pub fn setup_text_message_service(
-    node_identity: NodeIdentity,
-    peers: Vec<NodeIdentity>,
-) -> (ServiceExecutor, Arc<TextMessageServiceApi>)
-{
-    let tms = TextMessageService::new(node_identity.identity.public_key.clone());
-    let tms_api = tms.get_api();
+pub async fn setup_comms_services(
+    node_identity: Arc<NodeIdentity>,
+    peers: Vec<Arc<NodeIdentity>>,
+    publisher: InboundDomainConnector,
+    database_path: String,
+    discovery_request_timeout: Duration,
+    shutdown_signal: ShutdownSignal,
+) -> (CommsNode, Dht) {
+    let peers = peers.into_iter().map(|ni| ni.to_peer()).collect();
+    let (comms, dht, _) = initialize_local_test_comms(
+        node_identity,
+        publisher,
+        &database_path,
+        discovery_request_timeout,
+        peers,
+        shutdown_signal,
+    )
+    .await
+    .unwrap();
 
-    let services = ServiceRegistry::new().register(tms);
+    (comms, dht)
+}
 
-    let comms = CommsBuilder::new()
-        .with_routes(services.build_comms_routes())
-        .with_node_identity(node_identity.clone())
-        .configure_peer_connections(PeerConnectionConfig {
-            host: "127.0.0.1".parse().unwrap(),
-            ..Default::default()
-        })
-        .configure_control_service(ControlServiceConfig {
-            socks_proxy_address: None,
-            listener_address: node_identity.control_service_address.clone(),
-            accept_message_type: TariMessageType::new(NetMessage::Accept),
-            requested_outbound_connection_timeout: Duration::from_millis(5000),
-        })
-        .build()
-        .unwrap()
-        .start()
-        .unwrap();
-
-    for p in peers {
-        comms
-            .peer_manager()
-            .add_peer(create_peer(p.identity.public_key.clone(), p.control_service_address))
-            .unwrap();
+pub fn create_dummy_message<T>(inner: T, public_key: &CommsPublicKey) -> DomainMessage<T> {
+    let peer_source = Peer::new(
+        public_key.clone(),
+        NodeId::from_key(public_key),
+        Vec::<Multiaddr>::new().into(),
+        PeerFlags::empty(),
+        PeerFeatures::COMMUNICATION_NODE,
+        Default::default(),
+        Default::default(),
+    );
+    DomainMessage {
+        dht_header: DhtMessageHeader {
+            version: DhtProtocolVersion::latest(),
+            ephemeral_public_key: None,
+            origin_mac: Vec::new(),
+            message_type: Default::default(),
+            flags: Default::default(),
+            destination: Default::default(),
+            message_tag: MessageTag::new(),
+            expires: None,
+        },
+        authenticated_origin: None,
+        source_peer: peer_source,
+        inner,
     }
-
-    (ServiceExecutor::execute(Arc::new(comms), services), tms_api)
 }

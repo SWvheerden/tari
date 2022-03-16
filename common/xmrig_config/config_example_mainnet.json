@@ -1,0 +1,15 @@
+{
+    "autosave": true,
+    "cpu": true,
+    "opencl": false,
+    "cuda": false,
+    "pools": [
+        {
+            "coin": "monero",
+            "url": "127.0.0.1:7878",
+            "user": "YOUR MONERO WALLET ADDRESS HERE",
+            "tls": false,
+            "daemon": true
+        }
+    ]
+}

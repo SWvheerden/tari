@@ -20,30 +20,84 @@
 //  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 //  USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use std::{fmt::Debug, thread, time::Duration};
+use rand::{CryptoRng, Rng};
+use tari_common_types::types::{CommitmentFactory, PrivateKey, PublicKey};
+use tari_core::transactions::{
+    tari_amount::MicroTari,
+    test_helpers::{create_unblinded_output, TestParams as TestParamsHelpers},
+    transaction_components::{OutputFeatures, TransactionInput, UnblindedOutput},
+};
+use tari_crypto::{
+    keys::{PublicKey as PublicKeyTrait, SecretKey as SecretKeyTrait},
+    script,
+};
 
-pub fn assert_change<F, T>(func: F, to: T, poll_count: usize)
-where
-    F: Fn() -> T,
-    T: Eq + Debug,
-{
-    let mut i = 0;
-    loop {
-        let last_val = func();
-        if last_val == to {
-            break;
+pub struct TestParams {
+    pub spend_key: PrivateKey,
+    pub change_spend_key: PrivateKey,
+    pub offset: PrivateKey,
+    pub nonce: PrivateKey,
+    pub public_nonce: PublicKey,
+}
+impl TestParams {
+    pub fn new<R: Rng + CryptoRng>(rng: &mut R) -> TestParams {
+        let r = PrivateKey::random(rng);
+        TestParams {
+            spend_key: PrivateKey::random(rng),
+            change_spend_key: PrivateKey::random(rng),
+            offset: PrivateKey::random(rng),
+            public_nonce: PublicKey::from_secret_key(&r),
+            nonce: r,
         }
-
-        i += 1;
-        if i >= poll_count {
-            panic!(
-                "Value did not change to {:?} within {}ms (last value: {:?}",
-                to,
-                poll_count * 100,
-                last_val,
-            );
-        }
-
-        thread::sleep(Duration::from_millis(100));
     }
+}
+
+pub fn make_input<R: Rng + CryptoRng>(
+    _rng: &mut R,
+    val: MicroTari,
+    factory: &CommitmentFactory,
+) -> (TransactionInput, UnblindedOutput) {
+    let utxo = create_unblinded_output(script!(Nop), OutputFeatures::default(), TestParamsHelpers::new(), val);
+    (
+        utxo.as_transaction_input(factory)
+            .expect("Should be able to make transaction input"),
+        utxo,
+    )
+}
+
+pub fn make_input_with_features<R: Rng + CryptoRng>(
+    _rng: &mut R,
+    value: MicroTari,
+    factory: &CommitmentFactory,
+    features: Option<OutputFeatures>,
+) -> (TransactionInput, UnblindedOutput) {
+    let utxo = create_unblinded_output(
+        script!(Nop),
+        features.unwrap_or_default(),
+        TestParamsHelpers::new(),
+        value,
+    );
+    (
+        utxo.as_transaction_input(factory)
+            .expect("Should be able to make transaction input"),
+        utxo,
+    )
+}
+
+/// This macro unlocks a Mutex or RwLock. If the lock is
+/// poisoned (i.e. panic while unlocked) the last value
+/// before the panic is used.
+macro_rules! acquire_lock {
+    ($e:expr, $m:ident) => {
+        match $e.$m() {
+            Ok(lock) => lock,
+            Err(poisoned) => {
+                log::warn!(target: "wallet", "Lock has been POISONED and will be silently recovered");
+                poisoned.into_inner()
+            },
+        }
+    };
+    ($e:expr) => {
+        acquire_lock!($e, lock)
+    };
 }

@@ -20,48 +20,88 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use dirs;
-use std::{env, path::PathBuf};
+#![cfg_attr(not(debug_assertions), deny(unused_variables))]
+#![cfg_attr(not(debug_assertions), deny(unused_imports))]
+#![cfg_attr(not(debug_assertions), deny(dead_code))]
+#![cfg_attr(not(debug_assertions), deny(unused_extern_crates))]
+#![deny(unused_must_use)]
+#![deny(unreachable_patterns)]
+#![deny(unknown_lints)]
 
-/// Determine the path to a log configuration file using the following precedence rules:
-/// 1. Use the provided path (usually pulled from a CLI argument)
-/// 2. Use the value in the `TARI_LOG_CONFIGURATION` envar
-/// 3. The default path (OS-dependent), "~/.tari/log4rs.toml`
-/// 4. The current directory
-pub fn get_log_configuration_path(cli_path: Option<PathBuf>) -> PathBuf {
-    cli_path
-        .or_else(|| {
-            env::var_os("TARI_LOG_CONFIGURATION")
-                .filter(|s| !s.is_empty())
-                .map(|s| PathBuf::from(s))
-        })
-        .or_else(|| dirs::home_dir().map(|path| path.join(".tari/log4rs.toml")))
-        .or_else(|| {
-            Some(env::current_dir().expect(
-                "Could find a suitable path to the log configuration file. Consider setting the \
-                 TARI_LOG_CONFIGURATION envar, or check that the current directory exists and that you have \
-                 permission to read it",
-            ))
-        })
-        .unwrap()
-}
+//! # Common logging and configuration utilities
+//!
+//! ## The global Tari configuration file
+//!
+//! A single configuration file (usually `~/.tari/config.toml` is used to manage settings for all Tari applications
+//! and nodes running on a single system, whether it's a base node, validator node, or wallet.
+//!
+//! Setting of configuration parameters is applied using the following order of precedence:
+//!
+//! 1. Command-line argument
+//! 2. Environment variable
+//! 3. `config.toml` file value (see details: [configuration])
+//! 4. Configuration default
+//!
+//! The utilities exposed in this crate are opinionated, but flexible. In general, all data is stored in a `.tari`
+//! folder under your home folder.
+//!
+//! ## Custom application configuration
+//!
+//! Tari configuration file allows adding custom application specific sections. Tari is using [config] crate
+//! to load configurations and gives access to [`config::Config`] struct so that apps might be flexible.
+//! Though as tari apps follow certain configurability assumptions, tari_common provides helper traits
+//! which automate those with minimal code.
+//!
+//! ## CLI helpers
+//!
+//! Bootstrapping tari configuration files might be customized via CLI or env settings. To help with building
+//! tari-enabled CLI from scratch as easy as possible this crate exposes [ConfigBootstrap] struct which
+//! implements [structopt::StructOpt] trait and can be easily reused in any CLI.
+//!
+//! ## Example - CLI which is loading and deserializing the global config file
+//!
+//! ```edition2018
+//! # use tari_common::*;
+//! # use tari_test_utils::random::string;
+//! # use tempfile::tempdir;
+//! # use structopt::StructOpt;
+//! # use tari_common::configuration::{Network, bootstrap::ApplicationType};
+//! let mut args = ConfigBootstrap::from_args();
+//! # let temp_dir = tempdir().unwrap();
+//! # args.base_path = temp_dir.path().to_path_buf();
+//! # args.init = true;
+//! args.init_dirs(ApplicationType::BaseNode);
+//! let config = args.load_configuration().unwrap();
+//! let global = GlobalConfig::convert_from(ApplicationType::BaseNode, config, Some("dibbler".into())).unwrap();
+//! assert_eq!(global.network, Network::Dibbler);
+//! assert!(global.core_threads.is_none());
+//! # std::fs::remove_dir_all(temp_dir).unwrap();
+//! ```
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use std::env;
+#[cfg(any(feature = "build", feature = "static-application-info"))]
+pub mod build;
+pub mod exit_codes;
+#[macro_use]
+mod logging;
+pub mod configuration;
+pub use configuration::{
+    bootstrap::{install_configuration, ConfigBootstrap},
+    error::ConfigError,
+    global::{CommsTransport, DatabaseType, GlobalConfig, SocksAuthentication, TorControlAuthentication},
+    loader::{ConfigLoader, ConfigPath, ConfigurationError, DefaultConfigLoader, NetworkConfigPath},
+    name_server::DnsNameServer,
+    utils::{config_installer, default_config, load_configuration},
+};
+pub mod dir_utils;
+pub use logging::initialize_logging;
+pub mod file_lock;
 
-    #[test]
-    fn get_log_configuration_path_cli() {
-        let path = get_log_configuration_path(Some(PathBuf::from("~/my-tari")));
-        assert_eq!(path.to_str().unwrap(), "~/my-tari");
-    }
+pub const DEFAULT_CONFIG: &str = "config/config.toml";
+pub const DEFAULT_BASE_NODE_LOG_CONFIG: &str = "config/log4rs_base_node.yml";
+pub const DEFAULT_WALLET_LOG_CONFIG: &str = "config/log4rs_console_wallet.yml";
+pub const DEFAULT_MERGE_MINING_PROXY_LOG_CONFIG: &str = "config/log4rs_merge_mining_proxy.yml";
+pub const DEFAULT_STRATUM_TRANSCODER_LOG_CONFIG: &str = "config/log4rs_miningcore_transcoder.yml";
+pub const DEFAULT_MINING_NODE_LOG_CONFIG: &str = "config/log4rs_mining_node.yml";
+pub const DEFAULT_COLLECTIBLES_LOG_CONFIG: &str = "config/log4rs_collectibles.yml";
 
-    #[test]
-    fn get_log_configuration_path_by_env_var() {
-        env::set_var("TARI_LOG_CONFIGURATION", "~/fake-example");
-        let path = get_log_configuration_path(None);
-        assert_eq!(path.to_str().unwrap(), "~/fake-example");
-        env::set_var("TARI_LOG_CONFIGURATION", "");
-    }
-}
+pub(crate) const LOG_TARGET: &str = "common::config";

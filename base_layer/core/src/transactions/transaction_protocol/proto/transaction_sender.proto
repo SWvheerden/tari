@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+import "transaction_metadata.proto";
+import "types.proto";
+import "transaction.proto";
+
+package tari.transaction_protocol;
+
+message SingleRoundSenderData {
+    // The transaction id for the recipient
+    uint64 tx_id = 1;
+    // The amount, in µT, being sent to the recipient
+    uint64 amount = 2;
+    // The offset public excess for this transaction
+    bytes public_excess = 3;
+    // The sender's public nonce
+    bytes public_nonce = 4;
+    // The transaction metadata
+    TransactionMetadata metadata = 5;
+    // Plain text message to receiver
+    string message = 6;
+    // Tari script serialised script
+    bytes script = 7;
+    // Tari script offset pubkey, K_O
+    bytes sender_offset_public_key = 8;
+    // The sender's portion of the public commitment nonce
+    bytes public_commitment_nonce = 9;
+    // Output features
+    tari.types.OutputFeatures features = 10;
+    // Covenant
+    bytes covenant  = 11;
+    // Unique id for NFTs
+    // bytes unique_id = 12;
+}
+
+message TransactionSenderMessage {
+    oneof message {
+        bool None = 1;
+        SingleRoundSenderData single = 2;
+        bool Multiple = 3;
+    }
+}

@@ -51,8 +51,6 @@
 //!
 //! - [MessageData]
 //!
-//! This message is dispatched by the [InboundMessageBroker] to a [DomainConnector].
-//!
 //! [Frame]: ./tyoe.Frame.html
 //! [FrameSet]: ./tyoe.FrameSet.html
 //! [MessageEnvelope]: ./envelope/struct.MessageEnvelope.html
@@ -60,48 +58,34 @@
 //! [Message]: ./message/struct.Message.html
 //! [MessageHeader]: ./message/struct.MessageHeader.html
 //! [MessageData]: ./message/struct.MessageData.html
-//! [InboundMessageBroker]: ../inbound_message_service/inbound_message_broker/struct.InboundMessageBroker.html
 //! [DomainConnector]: ../domain_connector/struct.DomainConnector.html
-use crate::peer_manager::node_id::NodeId;
-use bitflags::*;
-use serde::{Deserialize, Serialize};
 
-mod domain_message_context;
+#[macro_use]
 mod envelope;
+pub use envelope::EnvelopeBody;
+
 mod error;
-mod message;
-mod message_context;
-mod message_data;
-pub mod p2p;
+pub use error::MessageError;
 
-pub use self::{
-    domain_message_context::*,
-    envelope::{MessageEnvelope, MessageEnvelopeHeader},
-    error::MessageError,
-    message::{Message, MessageHeader},
-    message_context::MessageContext,
-    message_data::*,
-};
+mod inbound;
+pub use inbound::InboundMessage;
 
-/// Represents a single message frame.
-pub type Frame = Vec<u8>;
-/// Represents a collection of frames which make up a multipart message.
-pub type FrameSet = Vec<Frame>;
+mod outbound;
+pub use outbound::{MessagingReplyRx, MessagingReplyTx, OutboundMessage};
 
-bitflags! {
-    /// Used to indicate characteristics of the incoming or outgoing message, such
-    /// as whether the message is encrypted.
-    #[derive(Deserialize, Serialize)]
-    pub struct MessageFlags: u8 {
-        const NONE = 0b00000000;
-        const ENCRYPTED = 0b00000001;
+mod tag;
+pub use tag::MessageTag;
+
+pub trait MessageExt: prost::Message {
+    /// Encodes a message, allocating the buffer on the heap as necessary
+    fn to_encoded_bytes(&self) -> Vec<u8>
+    where Self: Sized {
+        let mut buf = Vec::with_capacity(self.encoded_len());
+        self.encode(&mut buf).expect(
+            "prost::Message::encode documentation says it is infallible unless the buffer has insufficient capacity. \
+             This buffer's capacity was set with encoded_len",
+        );
+        buf
     }
 }
-
-/// Represents the ways a destination node can be represented.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub enum NodeDestination<P> {
-    Unknown,
-    PublicKey(P),
-    NodeId(NodeId),
-}
+impl<T: prost::Message> MessageExt for T {}

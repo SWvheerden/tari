@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+import "transaction.proto";
+import "block.proto";
+
+package tari.base_node;
+
+// Request message used to initiate a sync
+message SyncBlocksRequest {
+  // Start sending from this hash (exclusive)
+  bytes start_hash = 1;
+  // The hash of the last block that should be synced
+  bytes end_hash = 2;
+}
+
+// Response that contains the full body of a block
+message BlockBodyResponse {
+  bytes hash = 1;
+  tari.types.AggregateBody body = 2;
+}
+
+// Request message used to initiate a sync
+message SyncHeadersRequest {
+  // Start sending from this hash (exclusive)
+  bytes start_hash = 1;
+  // Number of blocks to send. If this is zero (empty) the peer SHOULD send to their tip height
+  uint64 count = 2;
+}
+
+// Find at which point the chain splits.
+message FindChainSplitRequest {
+  // A set of block hashes ordered in height descending order from the chain tip.
+  repeated bytes block_hashes = 1;
+  // The maximum number of headers to return starting at the first header after the matched height
+  uint64 header_count = 2;}
+
+message FindChainSplitResponse {
+  // An ordered list of headers starting from next header after the matching hash, up until `FindChainSplitRequest::count`
+  repeated tari.core.BlockHeader headers = 1;
+  // The index of the hash that matched from `FindChainSplitRequest::block_hashes`. This value could also be used to know how far back a split occurs.
+  uint64 fork_hash_index = 2;
+  /// The current header height of this node
+  uint64 tip_height = 3;
+}
+
+message SyncKernelsRequest {
+  uint64 start = 1;
+  bytes end_header_hash = 2;
+}
+
+message SyncUtxosRequest  {
+  uint64 start = 1;
+  bytes end_header_hash = 2;
+  bool include_pruned_utxos = 3;
+  bool include_deleted_bitmaps = 4;
+}
+message SyncUtxosResponse  {
+  oneof utxo_or_deleted {
+    SyncUtxo utxo = 1;
+    bytes deleted_diff = 2;
+  }
+  uint64 mmr_index = 3;
+}
+
+message SyncUtxo {
+  oneof utxo {
+    // The unspent transaction output
+    tari.types.TransactionOutput output = 1;
+    // If the UTXO is deleted/pruned, the hashes are returned
+    PrunedOutput pruned_output = 2;
+  }
+}
+
+message PrunedOutput {
+  bytes hash = 1;
+  bytes witness_hash = 2;
+}
+
+message SyncUtxosByBlockRequest  {
+  bytes start_header_hash = 1;
+  bytes end_header_hash = 2;
+}
+
+message SyncUtxosByBlockResponse  {
+  repeated tari.types.TransactionOutput outputs = 1;
+  uint64 height = 2;
+  bytes header_hash = 3;
+}

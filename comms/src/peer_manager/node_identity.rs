@@ -20,119 +20,217 @@
 //  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 //  USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use super::node_id::deserialize_node_id_from_hex;
-use crate::{
-    connection::NetAddress,
-    peer_manager::{
-        node_id::{NodeId, NodeIdError},
-        Peer,
-        PeerFlags,
-    },
-    types::{CommsPublicKey, CommsSecretKey},
+use std::{
+    fmt,
+    sync::{RwLock, RwLockReadGuard},
 };
-use derive_error::Error;
+
+use chrono::Utc;
+use multiaddr::Multiaddr;
 use rand::{CryptoRng, Rng};
 use serde::{Deserialize, Serialize};
-use tari_crypto::keys::{PublicKey, SecretKey};
-use tari_utilities::hex::serialize_to_hex;
+use tari_crypto::{
+    keys::{PublicKey, SecretKey},
+    tari_utilities::hex::serialize_to_hex,
+};
 
-#[derive(Debug, Error)]
-pub enum NodeIdentityError {
-    NodeIdError(NodeIdError),
+use super::node_id::deserialize_node_id_from_hex;
+use crate::{
+    peer_manager::{identity_signature::IdentitySignature, node_id::NodeId, Peer, PeerFeatures, PeerFlags},
+    types::{CommsPublicKey, CommsSecretKey},
+};
+
+/// The public and private identity of this node on the network
+#[derive(Serialize, Deserialize)]
+pub struct NodeIdentity {
+    #[serde(serialize_with = "serialize_to_hex")]
+    #[serde(deserialize_with = "deserialize_node_id_from_hex")]
+    node_id: NodeId,
+    public_key: CommsPublicKey,
+    features: PeerFeatures,
+    secret_key: CommsSecretKey,
+    public_address: RwLock<Multiaddr>,
+    #[serde(default = "rwlock_none")]
+    identity_signature: RwLock<Option<IdentitySignature>>,
 }
 
-/// Identity of this node
-/// # Fields
-/// `identity`: The public identity fields for this node
-///
-/// `secret_key`: The secret key corresponding to the public key of this node
-///
-/// `control_service_address`: The NetAddress of the local node's Control port
-#[derive(Clone, Serialize, Deserialize)]
-pub struct NodeIdentity {
-    pub identity: PeerNodeIdentity,
-    pub secret_key: CommsSecretKey,
-    pub control_service_address: NetAddress,
+fn rwlock_none() -> RwLock<Option<IdentitySignature>> {
+    RwLock::new(None)
 }
 
 impl NodeIdentity {
     /// Create a new NodeIdentity from the provided key pair and control service address
-    pub fn new(
-        secret_key: CommsSecretKey,
-        public_key: CommsPublicKey,
-        control_service_address: NetAddress,
-    ) -> Result<Self, NodeIdentityError>
-    {
-        let node_id = NodeId::from_key(&public_key).map_err(NodeIdentityError::NodeIdError)?;
+    pub fn new(secret_key: CommsSecretKey, public_address: Multiaddr, features: PeerFeatures) -> Self {
+        let public_key = CommsPublicKey::from_secret_key(&secret_key);
+        let node_id = NodeId::from_key(&public_key);
 
-        Ok(NodeIdentity {
-            identity: PeerNodeIdentity::new(node_id, public_key),
+        let node_identity = NodeIdentity {
+            node_id,
+            public_key,
+            features,
             secret_key,
-            control_service_address,
-        })
+            public_address: RwLock::new(public_address),
+            identity_signature: RwLock::new(None),
+        };
+        node_identity.sign();
+        node_identity
+    }
+
+    /// Create a new NodeIdentity from the provided key pair and control service address.
+    ///
+    /// # Unchecked
+    /// It is up to the caller to ensure that the given signature is valid for the node identity.
+    /// Prefer using NodeIdentity::new over this function.
+    pub fn with_signature_unchecked(
+        secret_key: CommsSecretKey,
+        public_address: Multiaddr,
+        features: PeerFeatures,
+        identity_signature: Option<IdentitySignature>,
+    ) -> Self {
+        let public_key = CommsPublicKey::from_secret_key(&secret_key);
+        let node_id = NodeId::from_key(&public_key);
+
+        NodeIdentity {
+            node_id,
+            public_key,
+            features,
+            secret_key,
+            public_address: RwLock::new(public_address),
+            identity_signature: RwLock::new(identity_signature),
+        }
     }
 
     /// Generates a new random NodeIdentity for CommsPublicKey
-    pub fn random<R>(rng: &mut R, control_service_address: NetAddress) -> Result<Self, NodeIdentityError>
+    pub fn random<R>(rng: &mut R, public_address: Multiaddr, features: PeerFeatures) -> Self
     where R: CryptoRng + Rng {
         let secret_key = CommsSecretKey::random(rng);
-        let public_key = CommsPublicKey::from_secret_key(&secret_key);
-        let node_id = NodeId::from_key(&public_key).map_err(NodeIdentityError::NodeIdError)?;
-
-        Ok(NodeIdentity {
-            identity: PeerNodeIdentity::new(node_id, public_key),
-            secret_key,
-            control_service_address,
-        })
+        Self::new(secret_key, public_address, features)
     }
 
-    /// This returns a random NodeIdentity for testing purposes. This function can panic. If a control_service_address
+    /// Retrieve the publicly accessible address that peers must connect to establish a connection
+    pub fn public_address(&self) -> Multiaddr {
+        acquire_read_lock!(self.public_address).clone()
+    }
+
+    /// Modify the public address.
+    pub fn set_public_address(&self, address: Multiaddr) {
+        let mut must_sign = false;
+        {
+            let mut lock = acquire_write_lock!(self.public_address);
+            if *lock != address {
+                *lock = address;
+                must_sign = true;
+            }
+        }
+        if must_sign {
+            self.sign()
+        }
+    }
+
+    /// This returns a random NodeIdentity for testing purposes. This function can panic. If public_address
     /// is None, 127.0.0.1:9000 will be used (i.e. the caller doesn't care what the control_service_address is).
     #[cfg(test)]
-    pub fn random_for_test(control_service_address: Option<NetAddress>) -> Self {
-        use rand::OsRng;
+    pub fn random_for_test(public_address: Option<Multiaddr>, features: PeerFeatures) -> Self {
         Self::random(
-            &mut OsRng::new().unwrap(),
-            control_service_address.or("127.0.0.1:9000".parse().ok()).unwrap(),
+            &mut rand::rngs::OsRng,
+            public_address
+                .or_else(|| "/ip4/127.0.0.1/tcp/9000".parse().ok())
+                .unwrap(),
+            features,
         )
-        .unwrap()
     }
-}
 
-impl From<NodeIdentity> for Peer {
-    fn from(node_identity: NodeIdentity) -> Peer {
-        Peer::new(
-            node_identity.identity.public_key,
-            node_identity.identity.node_id,
-            node_identity.control_service_address.into(),
+    pub fn node_id(&self) -> &NodeId {
+        &self.node_id
+    }
+
+    pub fn public_key(&self) -> &CommsPublicKey {
+        &self.public_key
+    }
+
+    pub fn secret_key(&self) -> &CommsSecretKey {
+        &self.secret_key
+    }
+
+    pub fn features(&self) -> PeerFeatures {
+        self.features
+    }
+
+    pub fn has_peer_features(&self, peer_features: PeerFeatures) -> bool {
+        self.features().contains(peer_features)
+    }
+
+    pub fn identity_signature_read(&self) -> RwLockReadGuard<'_, Option<IdentitySignature>> {
+        acquire_read_lock!(self.identity_signature)
+    }
+
+    pub fn is_signed(&self) -> bool {
+        self.identity_signature_read().is_some()
+    }
+
+    /// Signs the peer using the peer secret key and replaces the peer account signature.
+    pub fn sign(&self) {
+        let identity_sig = IdentitySignature::sign_new(
+            self.secret_key(),
+            self.features,
+            Some(&*acquire_read_lock!(self.public_address)),
+            Utc::now(),
+        );
+
+        *acquire_write_lock!(self.identity_signature) = Some(identity_sig);
+    }
+
+    /// Returns a Peer with the same public key, node id, public address and features as represented in this
+    /// NodeIdentity. _NOTE: PeerFlags, supported_protocols and user agent are empty._
+    pub fn to_peer(&self) -> Peer {
+        let mut peer = Peer::new(
+            self.public_key().clone(),
+            self.node_id().clone(),
+            self.public_address().into(),
             PeerFlags::empty(),
-        )
+            self.features(),
+            Default::default(),
+            Default::default(),
+        );
+        peer.identity_signature = acquire_read_lock!(self.identity_signature).clone();
+
+        peer
     }
 }
 
-/// The PeerNodeIdentity is a container that stores the public identity (NodeId, Identification Public Key pair) of a
-/// single node
-#[derive(Eq, PartialEq, Debug, Serialize, Deserialize, Clone)]
-pub struct PeerNodeIdentity {
-    #[serde(serialize_with = "serialize_to_hex")]
-    #[serde(deserialize_with = "deserialize_node_id_from_hex")]
-    pub node_id: NodeId,
-    pub public_key: CommsPublicKey,
-}
-
-impl PeerNodeIdentity {
-    /// Construct a new identity for a node that contains its NodeId and identification key pair
-    pub fn new(node_id: NodeId, public_key: CommsPublicKey) -> PeerNodeIdentity {
-        PeerNodeIdentity { node_id, public_key }
-    }
-}
-
-/// Construct a PeerNodeIdentity from a Peer
-impl From<Peer> for PeerNodeIdentity {
-    fn from(peer: Peer) -> Self {
+impl Clone for NodeIdentity {
+    fn clone(&self) -> Self {
         Self {
-            public_key: peer.public_key,
-            node_id: peer.node_id,
+            node_id: self.node_id.clone(),
+            public_key: self.public_key.clone(),
+            features: self.features,
+            secret_key: self.secret_key.clone(),
+            public_address: RwLock::new(self.public_address()),
+            identity_signature: RwLock::new(self.identity_signature_read().as_ref().cloned()),
         }
+    }
+}
+
+impl fmt::Display for NodeIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Public Key: {}", self.public_key)?;
+        writeln!(f, "Node ID: {}", self.node_id)?;
+        writeln!(f, "Public Address: {}", acquire_read_lock!(self.public_address))?;
+        writeln!(f, "Features: {:?}", self.features)?;
+
+        Ok(())
+    }
+}
+
+impl fmt::Debug for NodeIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NodeIdentity")
+            .field("public_key", &self.public_key)
+            .field("node_id", &self.node_id)
+            .field("public_address", &self.public_address)
+            .field("features", &self.features)
+            .field("secret_key", &"<secret>")
+            .field("identity_signature", &*acquire_read_lock!(self.identity_signature))
+            .finish()
     }
 }

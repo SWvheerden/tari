@@ -19,6 +19,11 @@
 // SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-pub mod comms_and_services;
+#[macro_use]
 pub mod utils;
+pub mod base_node_service_mock;
+pub mod comms_and_services;
+pub mod comms_rpc;
+pub mod data;
+pub mod output_manager_service_mock;
+pub mod transaction_service_mock;

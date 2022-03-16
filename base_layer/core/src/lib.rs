@@ -19,27 +19,59 @@
 // SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#![cfg_attr(not(debug_assertions), deny(unused_variables))]
+#![cfg_attr(not(debug_assertions), deny(unused_imports))]
+#![cfg_attr(not(debug_assertions), deny(dead_code))]
+#![cfg_attr(not(debug_assertions), deny(unused_extern_crates))]
+#![deny(unused_must_use)]
+#![deny(unreachable_patterns)]
+#![deny(unknown_lints)]
 
 #[macro_use]
 extern crate bitflags;
+
+pub mod blocks;
+#[cfg(feature = "base_node")]
+pub mod chain_storage;
+pub mod consensus;
 #[macro_use]
-extern crate lazy_static;
+pub mod covenants;
+#[cfg(feature = "base_node")]
+pub mod iterators;
+pub mod proof_of_work;
+#[cfg(feature = "base_node")]
+pub mod validation;
 
-pub mod block;
-pub mod blockheader;
-pub mod fee;
-pub mod pow;
-#[allow(clippy::op_ref)]
-pub mod transaction;
-pub mod transaction_protocol;
-pub mod types;
+#[cfg(any(test, feature = "base_node"))]
+#[macro_use]
+pub mod test_helpers;
 
-pub mod block_chain_state;
-pub mod chain;
-pub mod emission;
-pub mod error;
-pub mod genesis_block;
-pub mod tari_amount;
+#[cfg(any(feature = "base_node", feature = "base_node_proto"))]
+pub mod base_node;
+#[cfg(any(feature = "base_node", feature = "base_node_proto"))]
+pub mod proto;
 
-// Re-export commonly used structs
-pub use transaction_protocol::{recipient::ReceiverTransactionProtocol, sender::SenderTransactionProtocol};
+#[cfg(any(feature = "base_node", feature = "mempool_proto"))]
+pub mod mempool;
+
+#[cfg(feature = "transactions")]
+pub mod transactions;
+
+mod common;
+
+#[allow(clippy::ptr_offset_with_cast)]
+#[allow(clippy::assign_op_pattern)]
+#[allow(clippy::manual_range_contains)]
+// #[allow(clippy::fallible_impl_from)]
+pub mod large_ints {
+    uint::construct_uint! {
+        /// 256-bit unsigned integer.
+        pub struct U256(4);
+    }
+
+    uint::construct_uint! {
+        /// 512-bit unsigned integer.
+        pub struct U512(8);
+    }
+}
+pub use large_ints::{U256, U512};
