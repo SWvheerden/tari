@@ -197,6 +197,7 @@ jobs:
           cp -v "$GITHUB_WORKSPACE/target/release/tari_validator_node${TBN_EXT}" .
           cp -v "$GITHUB_WORKSPACE/target/release/tari_collectibles${TBN_EXT}" .
           cp -v "$GITHUB_WORKSPACE/target/release/tari_launchpad${TBN_EXT}" .
+          cp -v "$GITHUB_WORKSPACE/target/release/libtari_mining_helpers_ffi${LIB_EXT}" .
           cp -v "$GITHUB_WORKSPACE/applications/tari_base_node/${PLATFORM_SPECIFIC_DIR}/runtime/start_tor${SHELL_EXT}" .
 
       - name: Build the macOS pkg
