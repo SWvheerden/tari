@@ -6519,6 +6519,7 @@ dependencies = [
  "regex",
  "rustyline",
  "rustyline-derive",
+ "serde_json",
  "strum 0.22.0",
  "strum_macros 0.22.0",
  "tari_app_grpc",
@@ -7063,6 +7064,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tari_mining_helpers_ffi"
+version = "0.29.0"
+dependencies = [
+ "hex",
+ "libc",
+ "serde 1.0.136",
+ "serde_json",
+ "tari_common",
+ "tari_comms",
+ "tari_core",
+ "tari_crypto",
+ "tari_utilities",
+ "thiserror",
+]
+
+[[package]]
 name = "tari_mining_node"
 version = "0.28.1"
 dependencies = [
@@ -7186,22 +7203,6 @@ dependencies = [
  "rand 0.8.4",
  "serde 1.0.136",
  "serde_derive",
- "tari_utilities",
- "thiserror",
-]
-
-[[package]]
-name = "tari_stratum_ffi"
-version = "0.28.1"
-dependencies = [
- "hex",
- "libc",
- "serde 1.0.136",
- "serde_json",
- "tari_common",
- "tari_comms",
- "tari_core",
- "tari_crypto",
  "tari_utilities",
  "thiserror",
 ]

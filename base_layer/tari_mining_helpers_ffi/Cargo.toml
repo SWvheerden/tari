@@ -1,9 +1,9 @@
 [package]
-name = "tari_stratum_ffi"
+name = "tari_mining_helpers_ffi"
 authors = ["The Tari Development Community"]
 description = "Tari cryptocurrency miningcore C FFI bindings"
 license = "BSD-3-Clause"
-version = "0.28.1"
+version = "0.29.0"
 edition = "2018"
 
 [dependencies]

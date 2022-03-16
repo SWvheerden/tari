@@ -44,7 +44,7 @@ use tari_core::{
     },
     blocks::{Block, BlockHeader, NewBlockTemplate},
     chain_storage::{ChainStorageError, PrunedOutput},
-    consensus::{emission::Emission, ConsensusManager, NetworkConsensus},
+    consensus::{emission::Emission, ConsensusDecoding, ConsensusEncoding, ConsensusManager, NetworkConsensus},
     iterators::NonOverlappingIntegerPairIter,
     mempool::{service::LocalMempoolService, TxStorageResponse},
     proof_of_work::PowAlgorithm,
@@ -708,6 +708,53 @@ impl tari_rpc::base_node_server::BaseNode for BaseNodeGrpcServer {
         Ok(Response::new(response))
     }
 
+    async fn get_new_block_blob(
+        &self,
+        request: Request<tari_rpc::NewBlockTemplate>,
+    ) -> Result<Response<tari_rpc::GetNewBlockBlobResult>, Status> {
+        let request = request.into_inner();
+        debug!(target: LOG_TARGET, "Incoming GRPC request for get new block");
+        let block_template: NewBlockTemplate = request
+            .try_into()
+            .map_err(|s| Status::invalid_argument(format!("Invalid block template: {}", s)))?;
+
+        let mut handler = self.node_service.clone();
+
+        let new_block = match handler.get_new_block(block_template).await {
+            Ok(b) => b,
+            Err(CommsInterfaceError::ChainStorageError(ChainStorageError::InvalidArguments { message, .. })) => {
+                return Err(Status::invalid_argument(message));
+            },
+            Err(CommsInterfaceError::ChainStorageError(ChainStorageError::CannotCalculateNonTipMmr(msg))) => {
+                let status = Status::with_details(
+                    tonic::Code::FailedPrecondition,
+                    msg,
+                    Bytes::from_static(b"CannotCalculateNonTipMmr"),
+                );
+                return Err(status);
+            },
+            Err(e) => return Err(Status::internal(e.to_string())),
+        };
+        // construct response
+        let block_hash = new_block.hash();
+        let mining_hash = new_block.header.merged_mining_hash();
+
+        let (header, block_body) = new_block.into_header_body();
+        let mut header_bytes = Vec::new();
+        let _ = header.consensus_encode(&mut header_bytes)?;
+        let mut block_body_bytes = Vec::new();
+        let _ = block_body.consensus_encode(&mut block_body_bytes)?;
+
+        let response = tari_rpc::GetNewBlockBlobResult {
+            block_hash,
+            header: header_bytes,
+            block_body: block_body_bytes,
+            merge_mining_hash: mining_hash,
+        };
+        debug!(target: LOG_TARGET, "Sending GetNewBlock response to client");
+        Ok(Response::new(response))
+    }
+
     async fn submit_block(
         &self,
         request: Request<tari_rpc::Block>,
@@ -715,6 +762,34 @@ impl tari_rpc::base_node_server::BaseNode for BaseNodeGrpcServer {
         let request = request.into_inner();
         let block = Block::try_from(request)
             .map_err(|e| Status::invalid_argument(format!("Failed to convert arguments. Invalid block: {:?}", e)))?;
+        let block_height = block.header.height;
+        debug!(target: LOG_TARGET, "Miner submitted block: {}", block);
+        info!(
+            target: LOG_TARGET,
+            "Received SubmitBlock #{} request from client", block_height
+        );
+
+        let mut handler = self.node_service.clone();
+        let block_hash = handler
+            .submit_block(block)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        debug!(
+            target: LOG_TARGET,
+            "Sending SubmitBlock #{} response to client", block_height
+        );
+        Ok(Response::new(tari_rpc::SubmitBlockResponse { block_hash }))
+    }
+
+    async fn submit_block_blob(
+        &self,
+        request: Request<tari_rpc::BlockBlobRequest>,
+    ) -> Result<Response<tari_rpc::SubmitBlockResponse>, Status> {
+        debug!(target: LOG_TARGET, "Received block blob from miner: {:?}", request);
+        let request = request.into_inner();
+        let mut bytes = request.block_blob.as_slice();
+        let block = Block::consensus_decode(&mut bytes).map_err(|e| Status::internal(e.to_string()))?;
         let block_height = block.header.height;
         debug!(target: LOG_TARGET, "Miner submitted block: {}", block);
         info!(
