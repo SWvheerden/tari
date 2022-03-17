@@ -57,7 +57,7 @@ use tari_script::TariScript;
 use super::TransactionOutputVersion;
 use crate::{
     common::hash_writer::HashWriter,
-    consensus::{ConsensusDecoding, ConsensusEncoding, ConsensusEncodingSized, ToConsensusBytes},
+    consensus::{ConsensusDecoding, ConsensusEncoding, ConsensusEncodingSized},
     covenants::Covenant,
     transactions::{
         tari_amount::MicroTari,

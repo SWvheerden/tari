@@ -31,6 +31,7 @@
 mod error;
 use core::ptr;
 use std::{ffi::CString, slice};
+use tari_crypto::tari_utilities::Hashable;
 
 use libc::{c_char, c_int, c_uchar, c_uint, c_ulonglong};
 use tari_core::{
@@ -40,7 +41,6 @@ use tari_core::{
     transactions::aggregated_body::AggregateBody,
 };
 use tari_crypto::tari_utilities::hex::Hex;
-use tari_utilities::Hashable;
 
 use crate::error::{InterfaceError, MiningHelperError};
 

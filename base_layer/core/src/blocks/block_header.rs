@@ -63,6 +63,7 @@ use thiserror::Error;
 #[cfg(feature = "base_node")]
 use crate::blocks::{BlockBuilder, NewBlockHeaderTemplate};
 use crate::{
+    common::hash_writer::HashWriter,
     consensus::{ConsensusDecoding, ConsensusEncoding, MaxSizeBytes},
     proof_of_work::{PowAlgorithm, PowError, ProofOfWork},
 };
