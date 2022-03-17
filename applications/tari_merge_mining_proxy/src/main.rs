@@ -60,8 +60,6 @@ async fn main() -> Result<(), anyhow::Error> {
             return Ok(());
         },
     };
-    println!("\n{}\n", config);
-
     let addr = config.proxy_host_address;
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(5))

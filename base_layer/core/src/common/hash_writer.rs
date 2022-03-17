@@ -40,10 +40,6 @@ where H: FixedOutput<OutputSize = U32>
     pub fn finalize(self) -> [u8; 32] {
         self.digest.finalize_fixed().into()
     }
-
-    pub fn into_digest(self) -> H {
-        self.digest
-    }
 }
 
 impl<H: Update> Write for HashWriter<H> {

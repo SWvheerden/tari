@@ -46,7 +46,7 @@ pub struct BlockchainSyncConfig {
 impl Default for BlockchainSyncConfig {
     fn default() -> Self {
         Self {
-            initial_max_sync_latency: Duration::from_secs(10),
+            initial_max_sync_latency: Duration::from_secs(3),
             max_latency_increase: Duration::from_secs(2),
             ban_period: Duration::from_secs(30 * 60),
             short_ban_period: Duration::from_secs(60),

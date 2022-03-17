@@ -26,6 +26,8 @@
 use std::{
     cmp::Ordering,
     fmt::{Display, Formatter},
+    io,
+    io::{Read, Write},
 };
 
 use digest::{Digest, FixedOutput};
@@ -48,14 +50,14 @@ use tari_crypto::{
     keys::{PublicKey as PublicKeyTrait, SecretKey},
     range_proof::RangeProofService as RangeProofServiceTrait,
     ristretto::pedersen::PedersenCommitmentFactory,
+    script::TariScript,
     tari_utilities::{hex::Hex, ByteArray, Hashable},
 };
-use tari_script::TariScript;
 
 use super::TransactionOutputVersion;
 use crate::{
     common::hash_writer::HashWriter,
-    consensus::{ConsensusEncoding, ConsensusEncodingSized},
+    consensus::{ConsensusDecoding, ConsensusEncoding, ConsensusEncodingSized, ToConsensusBytes},
     covenants::Covenant,
     transactions::{
         tari_amount::MicroTari,
@@ -89,7 +91,7 @@ pub struct TransactionOutput {
     pub sender_offset_public_key: PublicKey,
     /// UTXO signature with the script offset private key, k_O
     pub metadata_signature: ComSignature,
-    /// The covenant that will be executed when spending this output
+    /// The script that will be executed when spending this output
     #[serde(default)]
     pub covenant: Covenant,
 }
@@ -250,14 +252,13 @@ impl TransactionOutput {
         commitment: &Commitment,
         covenant: &Covenant,
     ) -> Challenge {
-        let mut writer = HashWriter::new(Challenge::new());
-        public_commitment_nonce.consensus_encode(&mut writer).unwrap();
-        script.consensus_encode(&mut writer).unwrap();
-        features.consensus_encode(&mut writer).unwrap();
-        sender_offset_public_key.consensus_encode(&mut writer).unwrap();
-        commitment.consensus_encode(&mut writer).unwrap();
-        covenant.consensus_encode(&mut writer).unwrap();
-        writer.into_digest()
+        Challenge::new()
+            .chain(public_commitment_nonce.to_consensus_bytes())
+            .chain(script.to_consensus_bytes())
+            .chain(features.to_consensus_bytes())
+            .chain(sender_offset_public_key.to_consensus_bytes())
+            .chain(commitment.to_consensus_bytes())
+            .chain(covenant.to_consensus_bytes())
     }
 
     // Create commitment signature for the metadata
@@ -423,5 +424,43 @@ impl PartialOrd for TransactionOutput {
 impl Ord for TransactionOutput {
     fn cmp(&self, other: &Self) -> Ordering {
         self.commitment.cmp(&other.commitment)
+    }
+}
+
+impl ConsensusEncoding for TransactionOutput {
+    fn consensus_encode<W: Write>(&self, writer: &mut W) -> Result<usize, io::Error> {
+        let mut written = self.version.consensus_encode(writer)?;
+        written += self.features.consensus_encode(writer)?;
+        written += self.commitment.consensus_encode(writer)?;
+        written += self.proof.consensus_encode(writer)?;
+        written += self.script.consensus_encode(writer)?;
+        written += self.sender_offset_public_key.consensus_encode(writer)?;
+        written += self.metadata_signature.consensus_encode(writer)?;
+        written += self.covenant.consensus_encode(writer)?;
+        Ok(written)
+    }
+}
+
+impl ConsensusDecoding for TransactionOutput {
+    fn consensus_decode<R: Read>(reader: &mut R) -> Result<Self, io::Error> {
+        let version = TransactionOutputVersion::consensus_decode(reader)?;
+        let features = OutputFeatures::consensus_decode(reader)?;
+        let commitment = Commitment::consensus_decode(reader)?;
+        let proof = RangeProof::consensus_decode(reader)?;
+        let script = TariScript::consensus_decode(reader)?;
+        let sender_offset_public_key = PublicKey::consensus_decode(reader)?;
+        let metadata_signature = ComSignature::consensus_decode(reader)?;
+        let covenant = Covenant::consensus_decode(reader)?;
+        let input = TransactionOutput::new(
+            version,
+            features,
+            commitment,
+            proof,
+            script,
+            sender_offset_public_key,
+            metadata_signature,
+            covenant,
+        );
+        Ok(input)
     }
 }

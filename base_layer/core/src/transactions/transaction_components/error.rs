@@ -26,8 +26,7 @@
 use std::io;
 
 use serde::{Deserialize, Serialize};
-use tari_crypto::{range_proof::RangeProofError, signatures::CommitmentSignatureError};
-use tari_script::ScriptError;
+use tari_crypto::{range_proof::RangeProofError, script::ScriptError, signatures::CommitmentSignatureError};
 use thiserror::Error;
 
 use crate::covenants::CovenantError;

@@ -73,7 +73,7 @@ class MiningNodeProcess {
         this.nodeAddress,
         this.nodeGrpcPort,
         this.baseNodePort,
-        "/ip4/127.0.0.1/tcp/8084",
+        "127.0.0.1:8084",
         "127.0.0.1:8085",
         {
           mineOnTipOnly: this.mineOnTipOnly,

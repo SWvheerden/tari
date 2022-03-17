@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct JobParams {
     pub job_id: String,
-    pub blob: String,
+    pub blob: Vec<u8>,
     pub target: String,
     pub height: u64,
 }

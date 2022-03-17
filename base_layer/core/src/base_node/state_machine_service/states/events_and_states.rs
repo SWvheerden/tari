@@ -269,7 +269,7 @@ impl BlockSyncInfo {
 
     pub fn sync_progress_string(&self) -> String {
         format!(
-            "({}) {}/{} ({:.0}%){}{}",
+            "({}) {}/{} ({:.0}%){} Latency: {:.2?}",
             self.sync_peer.node_id().short_str(),
             self.local_height,
             self.tip_height,
@@ -278,10 +278,7 @@ impl BlockSyncInfo {
                 .items_per_second()
                 .map(|bps| format!(" {:.2?} blks/s", bps))
                 .unwrap_or_default(),
-            self.sync_peer
-                .calc_avg_latency()
-                .map(|avg| format!(", latency: {:.2?}", avg))
-                .unwrap_or_default(),
+            self.sync_peer.latency().unwrap_or_default()
         )
     }
 }

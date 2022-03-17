@@ -28,12 +28,12 @@ use std::{
 use tari_common_types::chain_metadata::ChainMetadata;
 use tari_comms::peer_manager::NodeId;
 
-use crate::{base_node::chain_metadata_service::PeerChainMetadata, common::rolling_avg::RollingAverageTime};
+use crate::{base_node::chain_metadata_service::PeerChainMetadata, common::rolling_vec::RollingVec};
 
 #[derive(Debug, Clone)]
 pub struct SyncPeer {
     peer_metadata: PeerChainMetadata,
-    avg_latency: RollingAverageTime,
+    samples: RollingVec<Duration>,
 }
 
 impl SyncPeer {
@@ -55,16 +55,17 @@ impl SyncPeer {
     }
 
     pub fn items_per_second(&self) -> Option<f64> {
-        self.avg_latency.calc_samples_per_second()
+        if self.samples.is_empty() {
+            return None;
+        }
+
+        let total_time = self.samples.iter().sum::<Duration>();
+        Some((self.samples.len() as f64 / total_time.as_micros() as f64) * 1_000_000.0)
     }
 
     pub(super) fn add_sample(&mut self, time: Duration) -> &mut Self {
-        self.avg_latency.add_sample(time);
+        self.samples.push(time);
         self
-    }
-
-    pub fn calc_avg_latency(&self) -> Option<Duration> {
-        self.avg_latency.calculate_average()
     }
 }
 
@@ -72,7 +73,7 @@ impl From<PeerChainMetadata> for SyncPeer {
     fn from(peer_metadata: PeerChainMetadata) -> Self {
         Self {
             peer_metadata,
-            avg_latency: RollingAverageTime::new(20),
+            samples: RollingVec::new(20),
         }
     }
 }

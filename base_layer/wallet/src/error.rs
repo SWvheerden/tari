@@ -98,8 +98,10 @@ pub enum WalletError {
     KeyManagerError(#[from] KeyManagerError),
     #[error("Key manager service error: `{0}`")]
     KeyManagerServiceError(#[from] KeyManagerServiceError),
+
     #[error("Transport channel error: `{0}`")]
     TransportChannelError(#[from] TransportChannelError),
+
     #[error("Unexpected API Response while calling method `{method}` on `{api}`")]
     UnexpectedApiResponse { method: String, api: String },
 }

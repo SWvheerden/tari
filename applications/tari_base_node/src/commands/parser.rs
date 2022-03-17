@@ -20,7 +20,7 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use std::str::FromStr;
+use std::string::ToString;
 
 use rustyline::{
     completion::Completer,
@@ -30,38 +30,49 @@ use rustyline::{
     Context,
 };
 use rustyline_derive::{Helper, Highlighter, Validator};
-use strum::{Display, EnumString};
-use tari_utilities::hex::{Hex, HexError};
-use thiserror::Error;
+use strum::IntoEnumIterator;
+use strum_macros::{Display, EnumIter, EnumString};
 
-use super::command::Command;
-
-#[derive(Debug, Error)]
-#[error("invalid format '{0}'")]
-pub struct FormatParseError(String);
-
-#[derive(Debug, Display, EnumString)]
-#[strum(serialize_all = "kebab-case")]
-pub enum Format {
-    Json,
-    Text,
-}
-
-impl Default for Format {
-    fn default() -> Self {
-        Self::Text
-    }
-}
-
-#[derive(Debug)]
-pub struct FromHex<T>(pub T);
-
-impl<T: Hex> FromStr for FromHex<T> {
-    type Err = HexError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        T::from_hex(s).map(Self)
-    }
+/// Enum representing commands used by the basenode
+#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter, EnumString)]
+#[strum(serialize_all = "kebab_case")]
+pub enum BaseNodeCommand {
+    Help,
+    Version,
+    CheckForUpdates,
+    Status,
+    GetChainMetadata,
+    GetDbStats,
+    GetPeer,
+    ListPeers,
+    DialPeer,
+    PingPeer,
+    ResetOfflinePeers,
+    RewindBlockchain,
+    BanPeer,
+    UnbanPeer,
+    UnbanAllPeers,
+    ListBannedPeers,
+    ListConnections,
+    ListHeaders,
+    CheckDb,
+    PeriodStats,
+    HeaderStats,
+    BlockTiming,
+    CalcTiming,
+    ListReorgs,
+    DiscoverPeer,
+    GetBlock,
+    SearchUtxo,
+    SearchKernel,
+    GetMempoolStats,
+    GetMempoolState,
+    GetMempoolTx,
+    Whoami,
+    GetStateInfo,
+    GetNetworkStats,
+    Quit,
+    Exit,
 }
 
 /// This is used to parse commands from the user and execute them
@@ -104,7 +115,7 @@ impl Parser {
     /// creates a new parser struct
     pub fn new() -> Self {
         Parser {
-            commands: Command::variants(),
+            commands: BaseNodeCommand::iter().map(|x| x.to_string()).collect(),
             hinter: HistoryHinter {},
         }
     }

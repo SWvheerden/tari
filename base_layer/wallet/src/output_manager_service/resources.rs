@@ -56,7 +56,6 @@ pub enum OutputManagerKeyManagerBranch {
     CoinbaseScript,
     RecoveryViewOnly,
     RecoveryBlinding,
-    RecoveryByte,
 }
 
 impl Display for OutputManagerKeyManagerBranch {
@@ -68,7 +67,6 @@ impl Display for OutputManagerKeyManagerBranch {
             OutputManagerKeyManagerBranch::CoinbaseScript => "Coinbase_script",
             OutputManagerKeyManagerBranch::RecoveryViewOnly => "Recovery_viewonly",
             OutputManagerKeyManagerBranch::RecoveryBlinding => "Recovery_blinding",
-            OutputManagerKeyManagerBranch::RecoveryByte => "Recovery_byte",
         };
         fmt.write_str(response)
     }

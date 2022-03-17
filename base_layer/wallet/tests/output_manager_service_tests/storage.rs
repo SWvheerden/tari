@@ -50,12 +50,11 @@ pub fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
     // Add some unspent outputs
     let mut unspent_outputs = Vec::new();
     for i in 0..5 {
-        let (_ti, uo) = runtime.block_on(make_input(
+        let (_ti, uo) = make_input(
             &mut OsRng,
             MicroTari::from(100 + OsRng.next_u64() % 1000),
             &factories.commitment,
-            None,
-        ));
+        );
         let mut uo = DbUnblindedOutput::from_unblinded_output(uo, &factories, None).unwrap();
         uo.unblinded_output.features.maturity = i;
         runtime.block_on(db.add_unspent_output(uo.clone())).unwrap();
@@ -98,23 +97,21 @@ pub fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
             outputs_to_be_received: vec![],
         };
         for _ in 0..4 {
-            let (_ti, uo) = runtime.block_on(make_input(
+            let (_ti, uo) = make_input(
                 &mut OsRng,
                 MicroTari::from(100 + OsRng.next_u64() % 1000),
                 &factories.commitment,
-                None,
-            ));
+            );
             let uo = DbUnblindedOutput::from_unblinded_output(uo, &factories, None).unwrap();
             runtime.block_on(db.add_unspent_output(uo.clone())).unwrap();
             pending_tx.outputs_to_be_spent.push(uo);
         }
         for _ in 0..2 {
-            let (_ti, uo) = runtime.block_on(make_input(
+            let (_ti, uo) = make_input(
                 &mut OsRng,
                 MicroTari::from(100 + OsRng.next_u64() % 1000),
                 &factories.commitment,
-                None,
-            ));
+            );
             let uo = DbUnblindedOutput::from_unblinded_output(uo, &factories, None).unwrap();
             pending_tx.outputs_to_be_received.push(uo);
         }
@@ -252,12 +249,11 @@ pub fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
     );
 
     // Add output to be received
-    let (_ti, uo) = runtime.block_on(make_input(
+    let (_ti, uo) = make_input(
         &mut OsRng,
         MicroTari::from(100 + OsRng.next_u64() % 1000),
         &factories.commitment,
-        None,
-    ));
+    );
     let output_to_be_received = DbUnblindedOutput::from_unblinded_output(uo, &factories, None).unwrap();
     runtime
         .block_on(db.add_output_to_be_received(11.into(), output_to_be_received.clone(), None))
@@ -358,9 +354,7 @@ pub async fn test_short_term_encumberance() {
             &mut OsRng,
             MicroTari::from(100 + OsRng.next_u64() % 1000),
             &factories.commitment,
-            None,
-        )
-        .await;
+        );
         let mut uo = DbUnblindedOutput::from_unblinded_output(uo, &factories, None).unwrap();
         uo.unblinded_output.features.maturity = i;
         db.add_unspent_output(uo.clone()).await.unwrap();
@@ -413,7 +407,7 @@ pub async fn test_no_duplicate_outputs() {
     let db = OutputManagerDatabase::new(backend);
 
     // create an output
-    let (_ti, uo) = make_input(&mut OsRng, MicroTari::from(1000), &factories.commitment, None).await;
+    let (_ti, uo) = make_input(&mut OsRng, MicroTari::from(1000), &factories.commitment);
     let uo = DbUnblindedOutput::from_unblinded_output(uo, &factories, None).unwrap();
 
     // add it to the database

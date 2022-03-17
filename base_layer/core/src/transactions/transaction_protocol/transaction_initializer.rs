@@ -36,9 +36,9 @@ use tari_crypto::{
     commitment::HomomorphicCommitmentFactory,
     keys::{PublicKey as PublicKeyTrait, SecretKey},
     ristretto::pedersen::PedersenCommitmentFactory,
+    script::{ExecutionStack, TariScript},
     tari_utilities::fixed_set::FixedSet,
 };
-use tari_script::{ExecutionStack, TariScript};
 
 use crate::{
     consensus::{ConsensusConstants, ConsensusEncodingSized},
@@ -214,13 +214,6 @@ impl SenderTransactionInitializer {
     ) -> Result<&mut Self, BuildError> {
         let commitment_factory = PedersenCommitmentFactory::default();
         let commitment = commitment_factory.commit(&output.spending_key, &PrivateKey::from(output.value));
-        let recovery_byte = OutputFeatures::create_unique_recovery_byte(&commitment, self.rewind_data.as_ref());
-        if recovery_byte != output.features.recovery_byte {
-            return self.clone().build_err(&*format!(
-                "Recovery byte not valid (expected {}, got {}), cannot add output: {:?}",
-                recovery_byte, output.features.recovery_byte, output
-            ))?;
-        }
         let e = TransactionOutput::build_metadata_signature_challenge(
             &output.script,
             &output.features,
@@ -234,7 +227,7 @@ impl SenderTransactionInitializer {
             &e.finalize_fixed(),
             &commitment_factory,
         ) {
-            return self.clone().build_err(&*format!(
+            self.clone().build_err(&*format!(
                 "Metadata signature not valid, cannot add output: {:?}",
                 output
             ))?;
@@ -297,16 +290,17 @@ impl SenderTransactionInitializer {
             .map(|o| self.fee.weighting().round_up_metadata_size(o.metadata_byte_size()))
             .sum::<usize>();
 
+        // TODO: implement iter for FixedSet to avoid the clone #LOGGED
         size += self
             .recipient_scripts
+            .clone()
+            .into_vec()
             .iter()
-            .filter_map(|script| {
-                script.map(|s| {
-                    self.fee.weighting().round_up_metadata_size(
-                        self.get_recipient_output_features().consensus_encode_exact_size() +
-                            s.consensus_encode_exact_size(),
-                    )
-                })
+            .map(|script| {
+                self.fee.weighting().round_up_metadata_size(
+                    self.get_recipient_output_features().consensus_encode_exact_size() +
+                        script.consensus_encode_exact_size(),
+                )
             })
             .sum::<usize>();
 
@@ -320,10 +314,7 @@ impl SenderTransactionInitializer {
     /// Tries to make a change output with the given transaction parameters and add it to the set of outputs. The total
     /// fee, including the additional change output (if any) is returned along with the amount of change.
     /// The change output **always has default output features**.
-    fn add_change_if_required(
-        &mut self,
-        factories: &CryptoFactories,
-    ) -> Result<(MicroTari, MicroTari, Option<UnblindedOutput>), String> {
+    fn add_change_if_required(&mut self) -> Result<(MicroTari, MicroTari, Option<UnblindedOutput>), String> {
         // The number of outputs excluding a possible residual change output
         let num_outputs = self.sender_custom_outputs.len() + self.num_recipients;
         let num_inputs = self.inputs.len();
@@ -345,7 +336,7 @@ impl SenderTransactionInitializer {
             self.fee()
                 .calculate(fee_per_gram, 1, num_inputs, num_outputs, metadata_size_without_change);
 
-        let mut output_features = self.get_recipient_output_features();
+        let output_features = self.get_recipient_output_features();
         let change_metadata_size = self
             .change_script
             .as_ref()
@@ -383,8 +374,6 @@ impl SenderTransactionInitializer {
                             .change_secret
                             .as_ref()
                             .ok_or("Change spending key was not provided")?;
-                        let commitment = factories.commitment.commit_value(&change_key.clone(), v.as_u64());
-                        output_features.update_recovery_byte(&commitment, self.rewind_data.as_ref());
                         let metadata_signature = TransactionOutput::create_final_metadata_signature(
                             &v,
                             &change_key.clone(),
@@ -493,7 +482,7 @@ impl SenderTransactionInitializer {
             return self.build_err("Too many inputs in transaction");
         }
         // Calculate the fee based on whether we need to add a residual change output or not
-        let (total_fee, change, change_output) = match self.add_change_if_required(factories) {
+        let (total_fee, change, change_output) = match self.add_change_if_required() {
             Ok((fee, change, output)) => (fee, change, output),
             Err(e) => return self.build_err(&e),
         };
@@ -511,14 +500,10 @@ impl SenderTransactionInitializer {
             .sender_custom_outputs
             .iter()
             .map(|o| {
-                let commitment = factories.commitment.commit_value(&o.spending_key, o.value.as_u64());
-                let mut uo = o.clone();
-                uo.features.update_recovery_byte(&commitment, self.rewind_data.as_ref());
-
                 if let Some(rewind_data) = self.rewind_data.as_ref() {
-                    uo.as_rewindable_transaction_output(factories, rewind_data, None)
+                    o.as_rewindable_transaction_output(factories, rewind_data, None)
                 } else {
-                    uo.as_transaction_output(factories)
+                    o.as_transaction_output(factories)
                 }
             })
             .collect::<Result<Vec<TransactionOutput>, _>>()
@@ -676,8 +661,12 @@ impl SenderTransactionInitializer {
 mod test {
     use rand::rngs::OsRng;
     use tari_common_types::types::PrivateKey;
-    use tari_crypto::{common::Blake256, keys::SecretKey};
-    use tari_script::{script, ExecutionStack, TariScript};
+    use tari_crypto::{
+        common::Blake256,
+        keys::SecretKey,
+        script,
+        script::{ExecutionStack, TariScript},
+    };
 
     use crate::{
         covenants::Covenant,

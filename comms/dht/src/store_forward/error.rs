@@ -27,7 +27,7 @@ use tari_comms::{
     message::MessageError,
     peer_manager::{NodeId, PeerManagerError},
 };
-use tari_utilities::byte_array::ByteArrayError;
+use tari_utilities::{byte_array::ByteArrayError, ciphers::cipher::CipherError};
 use thiserror::Error;
 
 use crate::{actor::DhtActorError, envelope::DhtMessageError, outbound::DhtOutboundError, storage::StorageError};
@@ -54,6 +54,8 @@ pub enum StoreAndForwardError {
     StoredMessageNotEncrypted,
     #[error("Unable to decrypt received stored message")]
     DecryptionFailed,
+    #[error("CipherError: {0}")]
+    CipherError(#[from] CipherError),
     #[error("DhtActorError: {0}")]
     DhtActorError(#[from] DhtActorError),
     #[error("Received duplicate stored message")]

@@ -41,7 +41,6 @@ use crate::{
     },
     blocks::{Block, BlockValidationError, ChainBlock},
     chain_storage::{async_db::AsyncBlockchainDb, BlockchainBackend},
-    common::rolling_avg::RollingAverageTime,
     proto::base_node::SyncBlocksRequest,
     transactions::aggregated_body::AggregateBody,
     validation::{BlockSyncBodyValidation, ValidationError},
@@ -94,7 +93,7 @@ impl<B: BlockchainBackend + 'static> BlockSynchronizer<B> {
                 Ok(_) => return Ok(()),
                 Err(err @ BlockSyncError::AllSyncPeersExceedLatency) => {
                     warn!(target: LOG_TARGET, "{}", err);
-                    if self.sync_peers.len() <= 2 {
+                    if self.sync_peers.len() == 1 {
                         warn!(
                             target: LOG_TARGET,
                             "Insufficient sync peers to continue with block sync"
@@ -225,10 +224,8 @@ impl<B: BlockchainBackend + 'static> BlockSynchronizer<B> {
         let mut prev_hash = best_full_block_hash;
         let mut current_block = None;
         let mut last_sync_timer = Instant::now();
-        let mut avg_latency = RollingAverageTime::new(20);
         while let Some(block) = block_stream.next().await {
             let latency = last_sync_timer.elapsed();
-            avg_latency.add_sample(latency);
             let block = block?;
 
             let header = self
@@ -319,12 +316,7 @@ impl<B: BlockchainBackend + 'static> BlockSynchronizer<B> {
                 .commit()
                 .await?;
 
-            // Average time between receiving blocks from the peer - used to detect a slow sync peer
-            let last_avg_latency = avg_latency.calculate_average();
-            if let Some(latency) = last_avg_latency {
-                sync_peer.set_latency(latency);
-            }
-            // Includes time to add block to database, used to show blocks/s on status line
+            sync_peer.set_latency(latency);
             sync_peer.add_sample(last_sync_timer.elapsed());
             self.hooks
                 .call_on_progress_block_hooks(block.clone(), tip_height, &sync_peer);
@@ -342,7 +334,7 @@ impl<B: BlockchainBackend + 'static> BlockSynchronizer<B> {
                 block.accumulated_data().accumulated_sha_difficulty,
                 latency
             );
-            if last_avg_latency.map(|avg| avg > max_latency).unwrap_or(false) {
+            if latency > max_latency {
                 return Err(BlockSyncError::MaxLatencyExceeded {
                     peer: sync_peer.node_id().clone(),
                     latency,

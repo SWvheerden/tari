@@ -22,6 +22,7 @@
 
 use aes_gcm::Aes256Gcm;
 use tari_common_types::types::PrivateKey;
+use tari_key_manager::mnemonic::MnemonicLanguage;
 
 use crate::key_manager_service::error::KeyManagerError;
 
@@ -60,4 +61,10 @@ pub trait KeyManagerInterface: Clone + Send + Sync + 'static {
         branch: T,
         index: u64,
     ) -> Result<(), KeyManagerError>;
+
+    async fn get_seed_words<T: Into<String> + Send>(
+        &self,
+        branch: T,
+        language: &MnemonicLanguage,
+    ) -> Result<Vec<String>, KeyManagerError>;
 }

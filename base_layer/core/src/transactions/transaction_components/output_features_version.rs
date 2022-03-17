@@ -5,11 +5,10 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use strum_macros::Display;
 
 use crate::consensus::{ConsensusDecoding, ConsensusEncoding, ConsensusEncodingSized};
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Deserialize, Serialize, Eq, PartialOrd, Display)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Deserialize, Serialize, Eq, PartialOrd)]
 #[repr(u8)]
 pub enum OutputFeaturesVersion {
     V0 = 0,

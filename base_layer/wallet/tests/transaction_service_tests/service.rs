@@ -90,11 +90,13 @@ use tari_core::{
 use tari_crypto::{
     commitment::HomomorphicCommitmentFactory,
     common::Blake256,
+    inputs,
     keys::{PublicKey as PK, SecretKey as SK},
+    script,
+    script::{ExecutionStack, TariScript},
 };
 use tari_key_manager::cipher_seed::CipherSeed;
 use tari_p2p::{comms_connector::pubsub_connector, domain_message::DomainMessage, Network};
-use tari_script::{inputs, script, ExecutionStack, TariScript};
 use tari_service_framework::{reply_channel, RegisterHandle, StackBuilder};
 use tari_shutdown::{Shutdown, ShutdownSignal};
 use tari_test_utils::random;
@@ -541,7 +543,7 @@ fn manage_single_transaction() {
     );
 
     let value = MicroTari::from(1000);
-    let (_utxo, uo1) = runtime.block_on(make_input(&mut OsRng, MicroTari(2500), &factories.commitment, None));
+    let (_utxo, uo1) = make_input(&mut OsRng, MicroTari(2500), &factories.commitment);
 
     assert!(runtime
         .block_on(alice_ts.send_transaction(
@@ -665,15 +667,9 @@ fn single_transaction_to_self() {
 
     runtime.block_on(async move {
         let initial_wallet_value = 2500.into();
-        let (_utxo, uo1) = make_input(
-            &mut OsRng,
-            initial_wallet_value,
-            &factories.commitment,
-            Some(alice_oms.clone()),
-        )
-        .await;
+        let (_utxo, uo1) = make_input(&mut OsRng, initial_wallet_value, &factories.commitment);
 
-        alice_oms.add_rewindable_output(uo1, None, None).await.unwrap();
+        alice_oms.add_output(uo1, None).await.unwrap();
         let message = "TAKE MAH _OWN_ MONEYS!".to_string();
         let value = 1000.into();
         let tx_id = alice_ts
@@ -754,12 +750,7 @@ fn send_one_sided_transaction_to_other() {
     alice_connectivity.set_base_node(base_node_identity.to_peer());
 
     let initial_wallet_value = 2500.into();
-    let (_utxo, uo1) = runtime.block_on(make_input(
-        &mut OsRng,
-        initial_wallet_value,
-        &factories.commitment,
-        None,
-    ));
+    let (_utxo, uo1) = make_input(&mut OsRng, initial_wallet_value, &factories.commitment);
     let mut alice_oms_clone = alice_oms.clone();
     runtime.block_on(async move { alice_oms_clone.add_output(uo1, None).await.unwrap() });
 
@@ -893,14 +884,9 @@ fn recover_one_sided_transaction() {
     alice_connectivity.set_base_node(base_node_identity.to_peer());
 
     let initial_wallet_value = 2500.into();
-    let (_utxo, uo1) = runtime.block_on(make_input(
-        &mut OsRng,
-        initial_wallet_value,
-        &factories.commitment,
-        Some(alice_oms.clone()),
-    ));
+    let (_utxo, uo1) = make_input(&mut OsRng, initial_wallet_value, &factories.commitment);
     let mut alice_oms_clone = alice_oms;
-    runtime.block_on(async move { alice_oms_clone.add_rewindable_output(uo1, None, None).await.unwrap() });
+    runtime.block_on(async move { alice_oms_clone.add_output(uo1, None).await.unwrap() });
 
     let message = "".to_string();
     let value = 1000.into();
@@ -1000,14 +986,9 @@ fn test_htlc_send_and_claim() {
     alice_connectivity.set_base_node(base_node_identity.to_peer());
 
     let initial_wallet_value = 2500.into();
-    let (_utxo, uo1) = runtime.block_on(make_input(
-        &mut OsRng,
-        initial_wallet_value,
-        &factories.commitment,
-        Some(alice_oms.clone()),
-    ));
+    let (_utxo, uo1) = make_input(&mut OsRng, initial_wallet_value, &factories.commitment);
     let mut alice_oms_clone = alice_oms.clone();
-    runtime.block_on(async move { alice_oms_clone.add_rewindable_output(uo1, None, None).await.unwrap() });
+    runtime.block_on(async move { alice_oms_clone.add_output(uo1, None).await.unwrap() });
 
     let message = "".to_string();
     let value = 1000.into();
@@ -1122,12 +1103,7 @@ fn send_one_sided_transaction_to_self() {
     alice_connectivity.set_base_node(base_node_identity.to_peer());
 
     let initial_wallet_value = 2500.into();
-    let (_utxo, uo1) = runtime.block_on(make_input(
-        &mut OsRng,
-        initial_wallet_value,
-        &factories.commitment,
-        None,
-    ));
+    let (_utxo, uo1) = make_input(&mut OsRng, initial_wallet_value, &factories.commitment);
     let mut alice_oms_clone = alice_oms;
     runtime.block_on(async move { alice_oms_clone.add_output(uo1, None).await.unwrap() });
 
@@ -1254,17 +1230,17 @@ fn manage_multiple_transactions() {
             .dial_peer(carol_node_identity.node_id().clone()),
     );
 
-    let (_utxo, uo2) = runtime.block_on(make_input(&mut OsRng, MicroTari(3500), &factories.commitment, None));
+    let (_utxo, uo2) = make_input(&mut OsRng, MicroTari(3500), &factories.commitment);
     runtime.block_on(bob_oms.add_output(uo2, None)).unwrap();
-    let (_utxo, uo3) = runtime.block_on(make_input(&mut OsRng, MicroTari(4500), &factories.commitment, None));
+    let (_utxo, uo3) = make_input(&mut OsRng, MicroTari(4500), &factories.commitment);
     runtime.block_on(carol_oms.add_output(uo3, None)).unwrap();
 
     // Add some funds to Alices wallet
-    let (_utxo, uo1a) = runtime.block_on(make_input(&mut OsRng, MicroTari(5500), &factories.commitment, None));
+    let (_utxo, uo1a) = make_input(&mut OsRng, MicroTari(5500), &factories.commitment);
     runtime.block_on(alice_oms.add_output(uo1a, None)).unwrap();
-    let (_utxo, uo1b) = runtime.block_on(make_input(&mut OsRng, MicroTari(3000), &factories.commitment, None));
+    let (_utxo, uo1b) = make_input(&mut OsRng, MicroTari(3000), &factories.commitment);
     runtime.block_on(alice_oms.add_output(uo1b, None)).unwrap();
-    let (_utxo, uo1c) = runtime.block_on(make_input(&mut OsRng, MicroTari(3000), &factories.commitment, None));
+    let (_utxo, uo1c) = make_input(&mut OsRng, MicroTari(3000), &factories.commitment);
     runtime.block_on(alice_oms.add_output(uo1c, None)).unwrap();
 
     // A series of interleaved transactions. First with Bob and Carol offline and then two with them online
@@ -1428,7 +1404,7 @@ fn test_accepting_unknown_tx_id_and_malformed_reply() {
 
     let mut alice_event_stream = alice_ts_interface.transaction_service_handle.get_event_stream();
 
-    let (_utxo, uo) = runtime.block_on(make_input(&mut OsRng, MicroTari(250000), &factories.commitment, None));
+    let (_utxo, uo) = make_input(&mut OsRng, MicroTari(250000), &factories.commitment);
 
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
@@ -1534,7 +1510,7 @@ fn finalize_tx_with_incorrect_pubkey() {
     let mut bob_ts_interface =
         setup_transaction_service_no_comms(&mut runtime, factories.clone(), connection_bob, None);
 
-    let (_utxo, uo) = runtime.block_on(make_input(&mut OsRng, MicroTari(250000), &factories.commitment, None));
+    let (_utxo, uo) = make_input(&mut OsRng, MicroTari(250000), &factories.commitment);
     runtime
         .block_on(bob_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
@@ -1653,7 +1629,7 @@ fn finalize_tx_with_missing_output() {
     let mut bob_ts_interface =
         setup_transaction_service_no_comms(&mut runtime, factories.clone(), connection_bob, None);
 
-    let (_utxo, uo) = runtime.block_on(make_input(&mut OsRng, MicroTari(250000), &factories.commitment, None));
+    let (_utxo, uo) = make_input(&mut OsRng, MicroTari(250000), &factories.commitment);
 
     runtime
         .block_on(bob_ts_interface.output_manager_service_handle.add_output(uo, None))
@@ -1827,11 +1803,11 @@ fn discovery_async_return_test() {
     );
     let mut alice_event_stream = alice_ts.get_event_stream();
 
-    let (_utxo, uo1a) = runtime.block_on(make_input(&mut OsRng, MicroTari(5500), &factories.commitment, None));
+    let (_utxo, uo1a) = make_input(&mut OsRng, MicroTari(5500), &factories.commitment);
     runtime.block_on(alice_oms.add_output(uo1a, None)).unwrap();
-    let (_utxo, uo1b) = runtime.block_on(make_input(&mut OsRng, MicroTari(3000), &factories.commitment, None));
+    let (_utxo, uo1b) = make_input(&mut OsRng, MicroTari(3000), &factories.commitment);
     runtime.block_on(alice_oms.add_output(uo1b, None)).unwrap();
-    let (_utxo, uo1c) = runtime.block_on(make_input(&mut OsRng, MicroTari(3000), &factories.commitment, None));
+    let (_utxo, uo1c) = make_input(&mut OsRng, MicroTari(3000), &factories.commitment);
     runtime.block_on(alice_oms.add_output(uo1c, None)).unwrap();
 
     let initial_balance = runtime.block_on(alice_oms.get_balance()).unwrap();
@@ -2137,12 +2113,7 @@ fn test_transaction_cancellation() {
     let mut alice_event_stream = alice_ts_interface.transaction_service_handle.get_event_stream();
 
     let alice_total_available = 250000 * uT;
-    let (_utxo, uo) = runtime.block_on(make_input(
-        &mut OsRng,
-        alice_total_available,
-        &factories.commitment,
-        None,
-    ));
+    let (_utxo, uo) = make_input(&mut OsRng, alice_total_available, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
@@ -2484,12 +2455,7 @@ fn test_direct_vs_saf_send_of_tx_reply_and_finalize() {
     let mut alice_ts_interface = setup_transaction_service_no_comms(&mut runtime, factories.clone(), connection, None);
 
     let alice_total_available = 250000 * uT;
-    let (_utxo, uo) = runtime.block_on(make_input(
-        &mut OsRng,
-        alice_total_available,
-        &factories.commitment,
-        None,
-    ));
+    let (_utxo, uo) = make_input(&mut OsRng, alice_total_available, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
@@ -2666,12 +2632,7 @@ fn test_direct_vs_saf_send_of_tx_reply_and_finalize() {
 
     // Now to repeat sending so we can test the SAF send of the finalize message
     let alice_total_available = 250000 * uT;
-    let (_utxo, uo) = runtime.block_on(make_input(
-        &mut OsRng,
-        alice_total_available,
-        &factories.commitment,
-        None,
-    ));
+    let (_utxo, uo) = make_input(&mut OsRng, alice_total_available, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
@@ -2773,19 +2734,19 @@ fn test_tx_direct_send_behaviour() {
     let mut alice_ts_interface = setup_transaction_service_no_comms(&mut runtime, factories.clone(), connection, None);
     let mut alice_event_stream = alice_ts_interface.transaction_service_handle.get_event_stream();
 
-    let (_utxo, uo) = runtime.block_on(make_input(&mut OsRng, 1000000 * uT, &factories.commitment, None));
+    let (_utxo, uo) = make_input(&mut OsRng, 1000000 * uT, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
-    let (_utxo, uo) = runtime.block_on(make_input(&mut OsRng, 1000000 * uT, &factories.commitment, None));
+    let (_utxo, uo) = make_input(&mut OsRng, 1000000 * uT, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
-    let (_utxo, uo) = runtime.block_on(make_input(&mut OsRng, 1000000 * uT, &factories.commitment, None));
+    let (_utxo, uo) = make_input(&mut OsRng, 1000000 * uT, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
-    let (_utxo, uo) = runtime.block_on(make_input(&mut OsRng, 1000000 * uT, &factories.commitment, None));
+    let (_utxo, uo) = make_input(&mut OsRng, 1000000 * uT, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
@@ -3006,7 +2967,7 @@ fn test_restarting_transaction_protocols() {
     // Bob is going to send a transaction to Alice
     let alice = TestParams::new(&mut OsRng);
     let bob = TestParams::new(&mut OsRng);
-    let (utxo, input) = runtime.block_on(make_input(&mut OsRng, MicroTari(2000), &factories.commitment, None));
+    let (utxo, input) = make_input(&mut OsRng, MicroTari(2000), &factories.commitment);
     let constants = create_consensus_constants(0);
     let fee_calc = Fee::new(*constants.transaction_weight());
     let mut builder = SenderTransactionProtocol::builder(1, constants);
@@ -4145,12 +4106,7 @@ fn test_transaction_resending() {
 
     // Send a transaction to Bob
     let alice_total_available = 250000 * uT;
-    let (_utxo, uo) = runtime.block_on(make_input(
-        &mut OsRng,
-        alice_total_available,
-        &factories.commitment,
-        None,
-    ));
+    let (_utxo, uo) = make_input(&mut OsRng, alice_total_available, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
@@ -4646,12 +4602,7 @@ fn test_replying_to_cancelled_tx() {
 
     // Send a transaction to Bob
     let alice_total_available = 250000 * uT;
-    let (_utxo, uo) = runtime.block_on(make_input(
-        &mut OsRng,
-        alice_total_available,
-        &factories.commitment,
-        None,
-    ));
+    let (_utxo, uo) = make_input(&mut OsRng, alice_total_available, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
@@ -4768,12 +4719,7 @@ fn test_transaction_timeout_cancellation() {
 
     // Send a transaction to Bob
     let alice_total_available = 250000 * uT;
-    let (_utxo, uo) = runtime.block_on(make_input(
-        &mut OsRng,
-        alice_total_available,
-        &factories.commitment,
-        None,
-    ));
+    let (_utxo, uo) = make_input(&mut OsRng, alice_total_available, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
@@ -5019,12 +4965,12 @@ fn transaction_service_tx_broadcast() {
 
     let alice_output_value = MicroTari(250000);
 
-    let (_utxo, uo) = runtime.block_on(make_input(&mut OsRng, alice_output_value, &factories.commitment, None));
+    let (_utxo, uo) = make_input(&mut OsRng, alice_output_value, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo, None))
         .unwrap();
 
-    let (_utxo, uo2) = runtime.block_on(make_input(&mut OsRng, alice_output_value, &factories.commitment, None));
+    let (_utxo, uo2) = make_input(&mut OsRng, alice_output_value, &factories.commitment);
     runtime
         .block_on(alice_ts_interface.output_manager_service_handle.add_output(uo2, None))
         .unwrap();
@@ -5528,24 +5474,9 @@ fn test_update_faux_tx_on_oms_validation() {
         ))
         .unwrap();
 
-    let (_ti, uo_1) = runtime.block_on(make_input(
-        &mut OsRng.clone(),
-        MicroTari::from(10000),
-        &factories.commitment,
-        None,
-    ));
-    let (_ti, uo_2) = runtime.block_on(make_input(
-        &mut OsRng.clone(),
-        MicroTari::from(20000),
-        &factories.commitment,
-        None,
-    ));
-    let (_ti, uo_3) = runtime.block_on(make_input(
-        &mut OsRng.clone(),
-        MicroTari::from(30000),
-        &factories.commitment,
-        None,
-    ));
+    let (_ti, uo_1) = make_input(&mut OsRng.clone(), MicroTari::from(10000), &factories.commitment);
+    let (_ti, uo_2) = make_input(&mut OsRng.clone(), MicroTari::from(20000), &factories.commitment);
+    let (_ti, uo_3) = make_input(&mut OsRng.clone(), MicroTari::from(30000), &factories.commitment);
     for (tx_id, uo) in [(tx_id_1, uo_1), (tx_id_2, uo_2), (tx_id_3, uo_3)] {
         runtime
             .block_on(

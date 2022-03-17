@@ -62,7 +62,6 @@ impl TryFrom<grpc::OutputFeatures> for OutputFeatures {
             OutputFlags::from_bits(features.flags as u8)
                 .ok_or_else(|| "Invalid or unrecognised output flags".to_string())?,
             features.maturity,
-            u8::try_from(features.recovery_byte).map_err(|_| "Invalid recovery byte: overflowed u8")?,
             features.metadata,
             unique_id,
             parent_public_key,
@@ -90,7 +89,6 @@ impl From<OutputFeatures> for grpc::OutputFeatures {
             sidechain_checkpoint: features.sidechain_checkpoint.map(|m| m.into()),
             version: features.version as u32,
             committee_definition: features.committee_definition.map(|c| c.into()),
-            recovery_byte: features.recovery_byte as u32,
         }
     }
 }
