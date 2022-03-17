@@ -25,6 +25,7 @@ use std::{self, convert::TryFrom, sync::mpsc, thread, time::SystemTime};
 use futures::stream::StreamExt;
 use log::*;
 use tari_app_grpc::tari_rpc::BlockHeader;
+use tari_core::consensus::ConsensusDecoding;
 use tari_utilities::{hex::Hex, Hashable};
 
 use crate::{display_report, miner::Miner, stratum, stratum::stratum_types as types};
@@ -39,7 +40,7 @@ pub struct Controller {
     current_height: u64,
     current_job_id: u64,
     current_difficulty_target: u64,
-    current_blob: String,
+    current_blob: Vec<u8>,
     current_header: Option<BlockHeader>,
     keep_alive_time: SystemTime,
     num_mining_threads: usize,
@@ -55,7 +56,7 @@ impl Controller {
             current_height: 0,
             current_job_id: 0,
             current_difficulty_target: 0,
-            current_blob: "".to_string(),
+            current_blob: Vec::new(),
             current_header: None,
             keep_alive_time: SystemTime::now(),
             num_mining_threads,
@@ -193,7 +194,7 @@ impl Controller {
         height: u64,
         job_id: u64,
         diff: u64,
-        blob: String,
+        blob: Vec<u8>,
     ) -> Result<bool, stratum::error::Error> {
         if height != self.current_height ||
             job_id != self.current_job_id ||
@@ -204,10 +205,8 @@ impl Controller {
             self.current_job_id = job_id;
             self.current_blob = blob.clone();
             self.current_difficulty_target = diff;
-            let header_hex = hex::decode(blob)
-                .map_err(|_| stratum::error::Error::Json("Blob is not a valid hex value".to_string()))?;
-            let tari_header: tari_core::blocks::BlockHeader =
-                serde_json::from_str(&String::from_utf8_lossy(&header_hex).to_string())?;
+            let tari_header = tari_core::blocks::BlockHeader::consensus_decode(&mut blob.as_slice())
+                .map_err(|_| stratum::error::Error::Json("Blob is not a valid header".to_string()))?;
             self.current_header = Some(tari_app_grpc::tari_rpc::BlockHeader::from(tari_header));
             Ok(true)
         } else {
