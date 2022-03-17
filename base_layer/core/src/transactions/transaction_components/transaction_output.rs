@@ -26,6 +26,8 @@
 use std::{
     cmp::Ordering,
     fmt::{Display, Formatter},
+    io,
+    io::{Read, Write},
 };
 
 use digest::{Digest, FixedOutput};
@@ -55,7 +57,7 @@ use tari_script::TariScript;
 use super::TransactionOutputVersion;
 use crate::{
     common::hash_writer::HashWriter,
-    consensus::{ConsensusEncoding, ConsensusEncodingSized},
+    consensus::{ConsensusDecoding, ConsensusEncoding, ConsensusEncodingSized},
     covenants::Covenant,
     transactions::{
         tari_amount::MicroTari,

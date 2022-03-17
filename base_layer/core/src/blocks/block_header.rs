@@ -40,8 +40,11 @@
 use std::{
     fmt,
     fmt::{Display, Error, Formatter},
-};
+    io,
+    io::{Read, Write},
+};use crate::consensus::ConsensusDecoding;
 
+use crate::consensus::MaxSizeBytes;
 use chrono::{DateTime, Utc};
 use digest::Digest;
 use serde::{
@@ -379,6 +382,48 @@ pub(crate) mod hash_serializer {
         } else {
             deserializer.deserialize_bytes(BlockHashVisitor)
         }
+    }
+}
+
+impl ConsensusEncoding for BlockHeader {
+    fn consensus_encode<W: Write>(&self, writer: &mut W) -> Result<usize, io::Error> {
+        let mut written = self.version.consensus_encode(writer)?;
+        written += self.height.consensus_encode(writer)?;
+        written += self.prev_hash.consensus_encode(writer)?;
+        written += self.timestamp.as_u64().consensus_encode(writer)?;
+        written += self.output_mr.consensus_encode(writer)?;
+        written += self.witness_mr.consensus_encode(writer)?;
+        written += self.output_mmr_size.consensus_encode(writer)?;
+        written += self.kernel_mr.consensus_encode(writer)?;
+        written += self.kernel_mmr_size.consensus_encode(writer)?;
+        written += self.input_mr.consensus_encode(writer)?;
+        written += self.total_kernel_offset.consensus_encode(writer)?;
+        written += self.total_script_offset.consensus_encode(writer)?;
+        written += self.nonce.consensus_encode(writer)?;
+        written += self.pow.consensus_encode(writer)?;
+        Ok(written)
+    }
+}
+
+impl ConsensusDecoding for BlockHeader {
+    fn consensus_decode<R: Read>(reader: &mut R) -> Result<Self, io::Error> {
+        const MAX_MR_SIZE: usize = 32;
+        let version = u16::consensus_decode(reader)?;
+        let mut header = BlockHeader::new(version);
+        header.height = u64::consensus_decode(reader)?;
+        header.prev_hash = <MaxSizeBytes<MAX_MR_SIZE> as ConsensusDecoding>::consensus_decode(reader)?.into();
+        header.timestamp = EpochTime::from(u64::consensus_decode(reader)?);
+        header.output_mr = <MaxSizeBytes<MAX_MR_SIZE> as ConsensusDecoding>::consensus_decode(reader)?.into();
+        header.witness_mr = <MaxSizeBytes<MAX_MR_SIZE> as ConsensusDecoding>::consensus_decode(reader)?.into();
+        header.output_mmr_size = u64::consensus_decode(reader)?;
+        header.kernel_mr = <MaxSizeBytes<MAX_MR_SIZE> as ConsensusDecoding>::consensus_decode(reader)?.into();
+        header.kernel_mmr_size = u64::consensus_decode(reader)?;
+        header.input_mr = <MaxSizeBytes<MAX_MR_SIZE> as ConsensusDecoding>::consensus_decode(reader)?.into();
+        header.total_kernel_offset = BlindingFactor::consensus_decode(reader)?;
+        header.total_script_offset = BlindingFactor::consensus_decode(reader)?;
+        header.nonce = u64::consensus_decode(reader)?;
+        header.pow = ProofOfWork::consensus_decode(reader)?;
+        Ok(header)
     }
 }
 

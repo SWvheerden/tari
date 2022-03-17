@@ -21,11 +21,11 @@
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 use std::{self, convert::TryFrom, sync::mpsc, thread, time::SystemTime};
-use tari_core::consensus::ConsensusDecoding;
 
 use futures::stream::StreamExt;
 use log::*;
 use tari_app_grpc::tari_rpc::BlockHeader;
+use tari_core::consensus::ConsensusDecoding;
 use tari_utilities::{hex::Hex, Hashable};
 
 use crate::{display_report, miner::Miner, stratum, stratum::stratum_types as types};
@@ -205,7 +205,8 @@ impl Controller {
             self.current_job_id = job_id;
             self.current_blob = blob.clone();
             self.current_difficulty_target = diff;
-            let tari_header = tari_core::blocks::BlockHeader::consensus_decode(&mut blob.as_slice()).map_err(|_| stratum::error::Error::Json("Blob is not a valid header".to_string()))?;
+            let tari_header = tari_core::blocks::BlockHeader::consensus_decode(&mut blob.as_slice())
+                .map_err(|_| stratum::error::Error::Json("Blob is not a valid header".to_string()))?;
             self.current_header = Some(tari_app_grpc::tari_rpc::BlockHeader::from(tari_header));
             Ok(true)
         } else {
