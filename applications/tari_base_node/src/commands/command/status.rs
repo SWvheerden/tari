@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use clap::Parser;
 use tari_app_utilities::consts;
+use tari_comms::connection_manager::LivenessStatus;
 use tokio::time;
 
 use super::{CommandContext, HandleCommand};
@@ -47,6 +48,7 @@ impl HandleCommand<Args> for CommandContext {
 }
 
 impl CommandContext {
+    #[allow(clippy::too_many_lines)]
     pub async fn status(&mut self, output: StatusLineOutput) -> Result<(), Error> {
         let mut full_log = false;
         if self.last_time_full.elapsed() > Duration::from_secs(120) {
@@ -102,7 +104,7 @@ impl CommandContext {
             status_line.add_field("Mempool", "query timed out");
         };
 
-        let conns = self.connectivity.get_active_connections().await?;
+        let conns = self.comms.connectivity().get_active_connections().await?;
         let (num_nodes, num_clients) = conns.iter().fold((0usize, 0usize), |(nodes, clients), conn| {
             if conn.peer_features().is_node() {
                 (nodes + 1, clients)
@@ -128,6 +130,20 @@ impl CommandContext {
                 num_active_rpc_sessions, self.config.base_node.p2p.rpc_max_simultaneous_sessions
             ),
         );
+
+        match self.comms.listening_info().liveness_status() {
+            LivenessStatus::Disabled => {},
+            LivenessStatus::Checking => {
+                status_line.add("⏳️️");
+            },
+            LivenessStatus::Unreachable => {
+                status_line.add("️🔌");
+            },
+            LivenessStatus::Live(latency) => {
+                status_line.add(format!("⚡️ {:.2?}", latency));
+            },
+        }
+
         if full_log {
             status_line.add_field(
                 "RandomX",

@@ -295,6 +295,11 @@ impl<B: BlockchainBackend + 'static> BlockSynchronizer<B> {
 
             let timer = Instant::now();
             let (header, header_accum_data) = header.into_parts();
+            trace!(
+                target: LOG_TARGET,
+                "Downloaded block from peer: {}",
+                Block::new(header.clone(), body.clone())
+            );
 
             let block = match self.block_validator.validate_body(Block::new(header, body)).await {
                 Ok(block) => block,
@@ -307,6 +312,7 @@ impl<B: BlockchainBackend + 'static> BlockSynchronizer<B> {
                     if let Err(err) = self
                         .db
                         .write_transaction()
+                        .delete_orphan(header_hash)
                         .insert_bad_block(header_hash, current_height)
                         .commit()
                         .await
@@ -333,6 +339,7 @@ impl<B: BlockchainBackend + 'static> BlockSynchronizer<B> {
             let timer = Instant::now();
             self.db
                 .write_transaction()
+                .delete_orphan(header_hash)
                 .insert_block_body(block.clone())
                 .set_best_block(
                     block.height(),
