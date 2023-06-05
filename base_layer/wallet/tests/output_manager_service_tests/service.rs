@@ -44,7 +44,7 @@ use tari_core::{
     transactions::{
         fee::Fee,
         tari_amount::{uT, MicroTari},
-        test_helpers::{create_non_recoverable_unblinded_output, TestParams as TestParamsHelpers},
+        test_helpers::{create_key_manager_output_with_data, TestParams as TestParamsHelpers},
         transaction_components::{EncryptedData, OutputFeatures, OutputType, TransactionOutput, UnblindedOutput},
         transaction_protocol::{sender::TransactionSenderMessage, RecoveryData, TransactionMetadata},
         weight::TransactionWeight,
@@ -320,7 +320,7 @@ async fn generate_sender_transaction_message(amount: MicroTari) -> (TxId, Transa
             script_private_key,
         );
 
-    let mut stp = builder.build(&factories, None, u64::MAX).unwrap();
+    let mut stp = builder.build().await.unwrap();
     let tx_id = stp.get_tx_id().unwrap();
     (
         tx_id,
@@ -814,7 +814,7 @@ async fn send_no_change() {
     let value1 = 5000;
     oms.output_manager_handle
         .add_output(
-            create_non_recoverable_unblinded_output(
+            create_key_manager_output_with_data(
                 script!(Nop),
                 OutputFeatures::default(),
                 &TestParamsHelpers::new(),
@@ -828,7 +828,7 @@ async fn send_no_change() {
     let value2 = 8000;
     oms.output_manager_handle
         .add_output(
-            create_non_recoverable_unblinded_output(
+            create_key_manager_output_with_data(
                 script!(Nop),
                 OutputFeatures::default(),
                 &TestParamsHelpers::new(),
@@ -888,7 +888,7 @@ async fn send_not_enough_for_change() {
     let value1 = MicroTari(500);
     oms.output_manager_handle
         .add_output(
-            create_non_recoverable_unblinded_output(
+            create_key_manager_output_with_data(
                 TariScript::default(),
                 OutputFeatures::default(),
                 &TestParamsHelpers::new(),
@@ -902,7 +902,7 @@ async fn send_not_enough_for_change() {
     let value2 = MicroTari(800);
     oms.output_manager_handle
         .add_output(
-            create_non_recoverable_unblinded_output(
+            create_key_manager_output_with_data(
                 TariScript::default(),
                 OutputFeatures::default(),
                 &TestParamsHelpers::new(),
@@ -1932,7 +1932,7 @@ async fn test_txo_revalidation() {
         .set_base_node_wallet_rpc_client(connect_rpc_client(&mut connection).await);
 
     let output1_value = 1_000_000;
-    let output1 = create_non_recoverable_unblinded_output(
+    let output1 = create_key_manager_output_with_data(
         script!(Nop),
         OutputFeatures::default(),
         &TestParamsHelpers::new(),
@@ -1946,7 +1946,7 @@ async fn test_txo_revalidation() {
         .unwrap();
 
     let output2_value = 2_000_000;
-    let output2 = create_non_recoverable_unblinded_output(
+    let output2 = create_key_manager_output_with_data(
         script!(Nop),
         OutputFeatures::default(),
         &TestParamsHelpers::new(),

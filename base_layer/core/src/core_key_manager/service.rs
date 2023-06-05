@@ -74,6 +74,7 @@ use crate::{
         tari_amount::MicroTari,
         transaction_components::{
             EncryptedData,
+            RangeProofType,
             TransactionKernel,
             TransactionKernelVersion,
             TransactionOutput,
@@ -315,6 +316,8 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         private_key: &KeyId<PublicKey>,
         value: &PrivateKey,
     ) -> Result<Commitment, KeyManagerServiceError> {
+        dbg!(value);
+        dbg!(&private_key);
         let key = self.get_private_key(private_key).await?;
         Ok(self.crypto_factories.commitment.commit(&key, value))
     }
@@ -475,15 +478,22 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     async fn get_metadata_signature_ephemeral_private_key_pair(
         &self,
         nonce_id: &KeyId<PublicKey>,
+        range_proof_type: RangeProofType,
     ) -> Result<(PrivateKey, PrivateKey), TransactionError> {
         let nonce_private_key = self.get_private_key(nonce_id).await?;
-        let hasher_a = DomainSeparatedHasher::<Blake256, KeyManagerHashingDomain>::new_with_label(
-            "metadata_signature_ephemeral_nonce_a",
-        );
-        let a_hash = hasher_a.chain(nonce_private_key.as_bytes()).finalize();
-        let nonce_a = PrivateKey::from_bytes(a_hash.as_ref()).map_err(|_| {
-            TransactionError::ConversionError("Invalid private key for sender offset private key".to_string())
-        })?;
+        let nonce_a = match range_proof_type {
+            RangeProofType::BulletProofPlus => {
+                let hasher_a = DomainSeparatedHasher::<Blake256, KeyManagerHashingDomain>::new_with_label(
+                    "metadata_signature_ephemeral_nonce_a",
+                );
+                let a_hash = hasher_a.chain(nonce_private_key.as_bytes()).finalize();
+                PrivateKey::from_bytes(a_hash.as_ref()).map_err(|_| {
+                    TransactionError::ConversionError("Invalid private key for sender offset private key".to_string())
+                })
+            },
+            RangeProofType::RevealedValue => Ok(PrivateKey::default()),
+        }?;
+
         let hasher_b = DomainSeparatedHasher::<Blake256, KeyManagerHashingDomain>::new_with_label(
             "metadata_signature_ephemeral_nonce_b",
         );
@@ -497,8 +507,11 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     pub async fn get_metadata_signature_ephemeral_commitment(
         &self,
         nonce_id: &KeyId<PublicKey>,
+        range_proof_type: RangeProofType,
     ) -> Result<Commitment, TransactionError> {
-        let (nonce_a, nonce_b) = self.get_metadata_signature_ephemeral_private_key_pair(nonce_id).await?;
+        let (nonce_a, nonce_b) = self
+            .get_metadata_signature_ephemeral_private_key_pair(nonce_id, range_proof_type)
+            .await?;
         Ok(self.crypto_factories.commitment.commit(&nonce_a, &nonce_b))
     }
 
@@ -534,8 +547,11 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         ephemeral_pubkey: &PublicKey,
         tx_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
+        range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError> {
-        let (nonce_a, nonce_b) = self.get_metadata_signature_ephemeral_private_key_pair(nonce_id).await?;
+        let (nonce_a, nonce_b) = self
+            .get_metadata_signature_ephemeral_private_key_pair(nonce_id, range_proof_type)
+            .await?;
         let ephemeral_commitment = self.crypto_factories.commitment.commit(&nonce_a, &nonce_b);
         let spend_private_key = self.get_private_key(spend_key_id).await?;
         let commitment = self.crypto_factories.commitment.commit(&spend_private_key, value);

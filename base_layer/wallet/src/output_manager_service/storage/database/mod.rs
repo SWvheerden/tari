@@ -30,7 +30,7 @@ pub use backend::OutputManagerBackend;
 use log::*;
 use tari_common_types::{
     transaction::TxId,
-    types::{Commitment, HashOutput, PrivateKey},
+    types::{PrivateKey, Commitment, HashOutput},
 };
 use tari_core::transactions::{
     tari_amount::MicroTari,

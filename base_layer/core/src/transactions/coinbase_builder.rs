@@ -21,15 +21,9 @@
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-use tari_common_types::types::{PrivateKey, PublicKey, Signature};
-use tari_crypto::{
-    commitment::HomomorphicCommitmentFactory,
-    hash::blake2::Blake256,
-    hashing::DomainSeparatedHasher,
-    keys::PublicKey as PK,
-};
+use tari_common_types::types::{Commitment, PrivateKey, PublicKey};
+use tari_key_manager::key_manager_service::KeyManagerServiceError;
 use tari_script::{inputs, script, TariScript};
-use tari_utilities::ByteArray;
 use thiserror::Error;
 
 use crate::{
@@ -37,25 +31,24 @@ use crate::{
         emission::{Emission, EmissionSchedule},
         ConsensusConstants,
     },
+    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, KeyId},
     covenants::Covenant,
     transactions::{
-        crypto_factories::CryptoFactories,
         tari_amount::{uT, MicroTari},
         transaction_components::{
-            EncryptedData,
             KernelBuilder,
             KernelFeatures,
+            KeyManagerOutput,
             OutputFeatures,
             Transaction,
             TransactionBuilder,
+            TransactionError,
             TransactionKernel,
             TransactionKernelVersion,
             TransactionOutput,
             TransactionOutputVersion,
-            UnblindedOutput,
         },
-        transaction_protocol::{RecoveryData, TransactionMetadata},
-        types::WalletServiceHashingDomain,
+        transaction_protocol::TransactionMetadata,
     },
 };
 
@@ -79,34 +72,42 @@ pub enum CoinbaseBuildError {
     InvalidTransaction,
     #[error("Unable to produce a spender offset key from spend key hash")]
     InvalidSenderOffsetKey,
+    #[error("An invalid transaction has been encountered: {0}")]
+    TransactionError(#[from] TransactionError),
+    #[error("Key manager service error: `{0}`")]
+    KeyManagerServiceError(String),
 }
 
-pub struct CoinbaseBuilder {
-    factories: CryptoFactories,
+impl From<KeyManagerServiceError> for CoinbaseBuildError {
+    fn from(err: KeyManagerServiceError) -> Self {
+        CoinbaseBuildError::KeyManagerServiceError(err.to_string())
+    }
+}
+
+pub struct CoinbaseBuilder<TKeyManagerInterface> {
+    key_manager: TKeyManagerInterface,
     block_height: Option<u64>,
     fees: Option<MicroTari>,
-    spend_key: Option<PrivateKey>,
-    script_key: Option<PrivateKey>,
+    spend_key_id: Option<KeyId<PublicKey>>,
+    script_key_id: Option<KeyId<PublicKey>>,
     script: Option<TariScript>,
-    private_nonce: Option<PrivateKey>,
-    recovery_data: Option<RecoveryData>,
     covenant: Covenant,
     extra: Option<Vec<u8>>,
 }
 
-impl CoinbaseBuilder {
+impl<TKeyManagerInterface> CoinbaseBuilder<TKeyManagerInterface>
+where TKeyManagerInterface: BaseLayerKeyManagerInterface
+{
     /// Start building a new Coinbase transaction. From here you can build the transaction piecemeal with the builder
     /// methods, or pass in a block to `using_block` to determine most of the coinbase parameters automatically.
-    pub fn new(factories: CryptoFactories) -> Self {
+    pub fn new(key_manager: TKeyManagerInterface) -> Self {
         CoinbaseBuilder {
-            factories,
+            key_manager,
             block_height: None,
             fees: None,
-            spend_key: None,
-            script_key: None,
+            spend_key_id: None,
+            script_key_id: None,
             script: None,
-            private_nonce: None,
-            recovery_data: None,
             covenant: Covenant::default(),
             extra: None,
         }
@@ -124,20 +125,20 @@ impl CoinbaseBuilder {
         self
     }
 
-    /// Provides the private spend key for this transaction. This will usually be provided by a miner's wallet instance.
-    pub fn with_spend_key(mut self, key: PrivateKey) -> Self {
-        self.spend_key = Some(key);
+    /// Provides the spend key for this transaction. This will usually be provided by a miner's wallet instance.
+    pub fn with_spend_key_id(mut self, key: KeyId<PublicKey>) -> Self {
+        self.spend_key_id = Some(key);
         self
     }
 
-    /// Provides the private script key for this transaction. This will usually be provided by a miner's wallet
+    /// Provides the script key for this transaction. This will usually be provided by a miner's wallet
     /// instance.
-    pub fn with_script_key(mut self, key: PrivateKey) -> Self {
-        self.script_key = Some(key);
+    pub fn with_script_key_id(mut self, key: KeyId<PublicKey>) -> Self {
+        self.script_key_id = Some(key);
         self
     }
 
-    /// Provides the private script for this transaction, usually by a miner's wallet instance.
+    /// Provides the script for this transaction, usually by a miner's wallet instance.
     pub fn with_script(mut self, script: TariScript) -> Self {
         self.script = Some(script);
         self
@@ -146,18 +147,6 @@ impl CoinbaseBuilder {
     /// Set the covenant for this transaction.
     pub fn with_covenant(mut self, covenant: Covenant) -> Self {
         self.covenant = covenant;
-        self
-    }
-
-    /// The nonce to be used for this transaction. This will usually be provided by a miner's wallet instance.
-    pub fn with_nonce(mut self, nonce: PrivateKey) -> Self {
-        self.private_nonce = Some(nonce);
-        self
-    }
-
-    /// Add the recovery data needed to make this coinbase output recoverable.
-    pub fn with_recovery_data(mut self, recovery_data: RecoveryData) -> Self {
-        self.recovery_data = Some(recovery_data);
         self
     }
 
@@ -173,17 +162,17 @@ impl CoinbaseBuilder {
     /// automatically set: Coinbase transactions have an offset of zero, no fees, the `COINBASE_OUTPUT` flags are set
     /// on the output and kernel, and the maturity schedule is set from the consensus rules.
     ///
-    /// After `build` is called, the struct is destroyed and the private keys stored are dropped and the memory zeroed
+    /// After `build` is called, the struct is destroyed and the memory zeroed
     /// out (by virtue of the zero_on_drop crate).
 
-    pub fn build(
+    pub async fn build(
         self,
         constants: &ConsensusConstants,
         emission_schedule: &EmissionSchedule,
-    ) -> Result<(Transaction, UnblindedOutput), CoinbaseBuildError> {
+    ) -> Result<(Transaction, KeyManagerOutput), CoinbaseBuildError> {
         let height = self.block_height.ok_or(CoinbaseBuildError::MissingBlockHeight)?;
         let reward = emission_schedule.block_reward(height);
-        self.build_with_reward(constants, reward)
+        self.build_with_reward(constants, reward).await
     }
 
     /// Try and construct a Coinbase Transaction while specifying the block reward. The other parameters (keys, nonces
@@ -191,79 +180,150 @@ impl CoinbaseBuilder {
     /// zero, no fees, the `COINBASE_OUTPUT` flags are set on the output and kernel, and the maturity schedule is
     /// set from the consensus rules.
     ///
-    /// After `build_with_reward` is called, the struct is destroyed and the private keys stored are dropped and the
+    /// After `build_with_reward` is called, the struct is destroyed and the
     /// memory zeroed out (by virtue of the zero_on_drop crate).
     #[allow(clippy::erasing_op)] // This is for 0 * uT
-    pub fn build_with_reward(
+    pub async fn build_with_reward(
         self,
         constants: &ConsensusConstants,
         block_reward: MicroTari,
-    ) -> Result<(Transaction, UnblindedOutput), CoinbaseBuildError> {
+    ) -> Result<(Transaction, KeyManagerOutput), CoinbaseBuildError> {
+        // gets tx details
         let height = self.block_height.ok_or(CoinbaseBuildError::MissingBlockHeight)?;
         let total_reward = block_reward + self.fees.ok_or(CoinbaseBuildError::MissingFees)?;
-        let nonce = self.private_nonce.ok_or(CoinbaseBuildError::MissingNonce)?;
-        let public_nonce = PublicKey::from_secret_key(&nonce);
-        let spending_key = self.spend_key.ok_or(CoinbaseBuildError::MissingSpendKey)?;
-        let script_private_key = self.script_key.unwrap_or_else(|| spending_key.clone());
+        let spending_key_id = self.spend_key_id.ok_or(CoinbaseBuildError::MissingSpendKey)?;
+        let script_key_id = self.script_key_id.ok_or(CoinbaseBuildError::MissingScriptKey)?;
+        let covenant = self.covenant;
         let script = self.script.unwrap_or_else(|| script!(Nop));
 
-        let commitment = self
-            .factories
-            .commitment
-            .commit_value(&spending_key, total_reward.as_u64());
-        let output_features = OutputFeatures::create_coinbase(height + constants.coinbase_lock_height(), self.extra);
-        let excess = self.factories.commitment.commit_value(&spending_key, 0);
         let kernel_features = KernelFeatures::create_coinbase();
         let metadata = TransactionMetadata::new_with_features(0.into(), 0, kernel_features);
-        let challenge = TransactionKernel::build_kernel_challenge_from_tx_meta(
-            &TransactionKernelVersion::get_current_version(),
-            &public_nonce,
-            excess.as_public_key(),
-            &metadata,
+        // generate kernel siganture
+        let kernel_version = TransactionKernelVersion::get_current_version();
+        let kernel_message = TransactionKernel::build_kernel_signature_message(
+            &kernel_version,
+            metadata.fee,
+            metadata.lock_height,
+            &metadata.kernel_features,
+            &metadata.burn_commitment,
         );
-        let sig = Signature::sign_raw(&spending_key, nonce, &challenge)
-            .map_err(|_| CoinbaseBuildError::BuildError("Challenge could not be represented as a scalar".into()))?;
+        let public_nonce_id = self
+            .key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await?;
 
-        let hasher =
-            DomainSeparatedHasher::<Blake256, WalletServiceHashingDomain>::new_with_label("sender_offset_private_key");
-        let spending_key_hash = hasher.chain(spending_key.as_bytes()).finalize();
-        let spending_key_hash_bytes = spending_key_hash.as_ref();
+        let public_nonce = self.key_manager.get_public_key_at_key_id(&public_nonce_id).await?;
+        let public_spend_key = self.key_manager.get_public_key_at_key_id(&spending_key_id).await?;
+        let public_script_key = self.key_manager.get_public_key_at_key_id(&script_key_id).await?;
 
-        let sender_offset_private_key =
-            PrivateKey::from_bytes(spending_key_hash_bytes).map_err(|_| CoinbaseBuildError::InvalidSenderOffsetKey)?;
-        let sender_offset_public_key = PublicKey::from_secret_key(&sender_offset_private_key);
-        let covenant = self.covenant;
-
+        let kernel_signature = self
+            .key_manager
+            .get_partial_kernel_signature(
+                &spending_key_id,
+                &public_nonce_id,
+                &public_nonce,
+                &public_spend_key,
+                &kernel_version,
+                &kernel_message,
+            )
+            .await?;
+        let offset = self
+            .key_manager
+            .get_partial_private_kernel_offset(&spending_key_id, &public_nonce_id)
+            .await?;
+        let excess_public_key = self
+            .key_manager
+            .get_partial_kernel_signature_excess(&spending_key_id, &public_nonce_id)
+            .await?;
+        let excess = Commitment::from_public_key(&excess_public_key);
+        // generate tx details
+        let value: u64 = total_reward.into();
+        dbg!(&spending_key_id);
+        dbg!(&value);
+        let commitment = self.key_manager.get_commitment(&spending_key_id, &value.into()).await?;
+        let output_features = OutputFeatures::create_coinbase(height + constants.coinbase_lock_height(), self.extra);
         let encrypted_data = self
-            .recovery_data
-            .as_ref()
-            .map(|rd| EncryptedData::encrypt_data(&rd.encryption_key, &commitment, total_reward, &spending_key))
-            .transpose()
-            .map_err(|_| CoinbaseBuildError::ValueEncryptionFailed)?
-            .unwrap_or_default();
-
+            .key_manager
+            .encrypt_data_for_recovery(&spending_key_id, &None, total_reward.into())
+            .await?;
         let minimum_value_promise = MicroTari::zero();
 
-        let metadata_sig = TransactionOutput::create_metadata_signature(
-            TransactionOutputVersion::get_current_version(),
-            total_reward,
-            &spending_key,
+        let output_version = TransactionOutputVersion::get_current_version();
+        let metadata_message = TransactionOutput::build_metadata_signature_message(
+            &output_version,
             &script,
             &output_features,
-            &sender_offset_private_key,
             &covenant,
             &encrypted_data,
             minimum_value_promise,
-        )
-        .map_err(|e| CoinbaseBuildError::BuildError(e.to_string()))?;
+        );
 
-        let unblinded_output = UnblindedOutput::new_current_version(
+        // because the coinbase does not have a spending input with a script key, we use the output spending key as
+        // replacement to calculate the script offset
+        let sender_offset_public_key_id = self
+            .key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await?;
+        let sender_offset_public_key = self
+            .key_manager
+            .get_public_key_at_key_id(&sender_offset_public_key_id)
+            .await?;
+        let ephemeral_pubkey_nonce_id = self
+            .key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await?;
+        let ephemeral_pubkey = self
+            .key_manager
+            .get_public_key_at_key_id(&ephemeral_pubkey_nonce_id)
+            .await?;
+
+        let ephemeral_commitment_nonce_id = self
+            .key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await?;
+        let receiver_metadata_signature = self
+            .key_manager
+            .get_receiver_partial_metadata_signature(
+                &spending_key_id,
+                &value.into(),
+                &ephemeral_commitment_nonce_id,
+                &sender_offset_public_key,
+                &ephemeral_pubkey,
+                &output_version,
+                &metadata_message,
+                output_features.range_proof_type,
+            )
+            .await?;
+
+        let ephemeral_commitment = self
+            .key_manager
+            .get_metadata_signature_ephemeral_commitment(
+                &ephemeral_commitment_nonce_id,
+                output_features.range_proof_type,
+            )
+            .await?;
+
+        let sender_metadata_signature = self
+            .key_manager
+            .get_sender_partial_metadata_signature(
+                &ephemeral_pubkey_nonce_id,
+                &sender_offset_public_key_id,
+                &commitment,
+                &ephemeral_commitment,
+                &output_version,
+                &metadata_message,
+            )
+            .await?;
+
+        let metadata_sig = &receiver_metadata_signature + &sender_metadata_signature;
+
+        let key_manager_output = KeyManagerOutput::new_current_version(
             total_reward,
-            spending_key,
+            spending_key_id,
             output_features,
             script,
-            inputs!(PublicKey::from_secret_key(&script_private_key)),
-            script_private_key,
+            inputs!(public_script_key),
+            script_key_id,
             sender_offset_public_key,
             metadata_sig,
             0,
@@ -271,29 +331,32 @@ impl CoinbaseBuilder {
             encrypted_data,
             minimum_value_promise,
         );
-        let output = unblinded_output
-            .as_transaction_output(&self.factories)
+        dbg!(&key_manager_output.spending_key_id);
+        dbg!(&key_manager_output.value);
+        let output = key_manager_output
+            .as_transaction_output(&self.key_manager)
+            .await
             .map_err(|e| CoinbaseBuildError::BuildError(e.to_string()))?;
         let kernel = KernelBuilder::new()
             .with_fee(0 * uT)
             .with_features(kernel_features)
             .with_lock_height(0)
             .with_excess(&excess)
-            .with_signature(&sig)
+            .with_signature(&kernel_signature)
             .build()
             .map_err(|e| CoinbaseBuildError::BuildError(e.to_string()))?;
 
         let mut builder = TransactionBuilder::new();
         builder
             .add_output(output)
-            .add_offset(PrivateKey::default())
+            .add_offset(offset)
             .add_script_offset(PrivateKey::default())
             .with_reward(total_reward)
             .with_kernel(kernel);
         let tx = builder
             .build()
             .map_err(|e| CoinbaseBuildError::BuildError(e.to_string()))?;
-        Ok((tx, unblinded_output))
+        Ok((tx, key_manager_output))
     }
 }
 
@@ -301,93 +364,99 @@ impl CoinbaseBuilder {
 mod test {
     use rand::rngs::OsRng;
     use tari_common::configuration::Network;
-    use tari_common_types::types::{PrivateKey, Signature};
-    use tari_crypto::{commitment::HomomorphicCommitmentFactory, keys::SecretKey as SecretKeyTrait};
+    use tari_common_types::types::PrivateKey;
+    use tari_crypto::keys::SecretKey as SecretKeyTrait;
 
     use crate::{
         consensus::{emission::Emission, ConsensusManager, ConsensusManagerBuilder},
+        test_helpers::TestKeyManager,
         transactions::{
             coinbase_builder::CoinbaseBuildError,
             crypto_factories::CryptoFactories,
             tari_amount::uT,
             test_helpers::TestParams,
-            transaction_components::{
-                EncryptedData,
-                KernelFeatures,
-                OutputFeatures,
-                OutputType,
-                TransactionError,
-                TransactionKernel,
-            },
+            transaction_components::{KernelFeatures, OutputFeatures, OutputType, TransactionError, TransactionKernel},
             transaction_protocol::RecoveryData,
             CoinbaseBuilder,
         },
         validation::aggregate_body::AggregateBodyInternalConsistencyValidator,
     };
 
-    fn get_builder() -> (CoinbaseBuilder, ConsensusManager, CryptoFactories) {
+    fn get_builder() -> (CoinbaseBuilder<TestKeyManager>, ConsensusManager, CryptoFactories) {
         let network = Network::LocalNet;
         let rules = ConsensusManagerBuilder::new(network).build();
+        let key_manager = create_test_core_key_manager_with_memory_db();
         let factories = CryptoFactories::default();
-        (CoinbaseBuilder::new(factories.clone()), rules, factories)
+        (CoinbaseBuilder::new(key_manager), rules, factories)
     }
 
-    #[test]
-    fn missing_height() {
+    #[tokio::test]
+    async fn missing_height() {
         let (builder, rules, _) = get_builder();
+
         assert_eq!(
             builder
-                .build(rules.consensus_constants(0), rules.emission_schedule(),)
+                .build(rules.consensus_constants(0), rules.emission_schedule())
+                .await
                 .unwrap_err(),
             CoinbaseBuildError::MissingBlockHeight
         );
     }
 
-    #[test]
-    fn missing_fees() {
+    #[tokio::test]
+    async fn missing_fees() {
         let (builder, rules, _) = get_builder();
         let builder = builder.with_block_height(42);
         assert_eq!(
             builder
                 .build(rules.consensus_constants(42), rules.emission_schedule(),)
+                .await
                 .unwrap_err(),
             CoinbaseBuildError::MissingFees
         );
     }
 
-    #[test]
+    #[tokio::test]
     #[allow(clippy::erasing_op)]
-    fn missing_spend_key() {
-        let p = TestParams::new();
+    async fn missing_spend_key() {
+        let key_manager = create_test_core_key_manager_with_memory_db();
+        let p = TestParams::new(&key_manager).await;
         let (builder, rules, _) = get_builder();
         let fees = 0 * uT;
-        let builder = builder.with_block_height(42).with_fees(fees).with_nonce(p.nonce);
+        let builder = builder.with_block_height(42).with_fees(fees);
         assert_eq!(
             builder
                 .build(rules.consensus_constants(42), rules.emission_schedule(),)
+                .await
                 .unwrap_err(),
             CoinbaseBuildError::MissingSpendKey
         );
     }
 
-    #[test]
-    fn valid_coinbase() {
-        let p = TestParams::new();
+    #[tokio::test]
+    async fn valid_coinbase() {
+        let key_manager = create_test_core_key_manager_with_memory_db();
+        let p = TestParams::new(&key_manager).await;
         let (builder, rules, factories) = get_builder();
         let builder = builder
             .with_block_height(42)
             .with_fees(145 * uT)
-            .with_nonce(p.nonce.clone())
-            .with_spend_key(p.spend_key.clone());
+            .with_spend_key_id(p.spend_key.clone())
+            .with_script_key_id(p.script_private_key);
         let (tx, _unblinded_output) = builder
             .build(rules.consensus_constants(42), rules.emission_schedule())
+            .await
             .unwrap();
         let utxo = &tx.body.outputs()[0];
         let block_reward = rules.emission_schedule().block_reward(42) + 145 * uT;
+        dbg!(&block_reward);
+        dbg!(&p.spend_key);
 
-        assert!(factories
-            .commitment
-            .open_value(&p.spend_key, block_reward.into(), utxo.commitment()));
+        let commitment = key_manager
+            .get_commitment(&p.spend_key, &block_reward.into())
+            .await
+            .unwrap();
+        assert_eq!(&commitment, utxo.commitment());
         utxo.verify_range_proof(&factories.range_proof).unwrap();
         assert_eq!(utxo.features.output_type, OutputType::Coinbase);
         tx.body
@@ -400,48 +469,20 @@ mod test {
             .unwrap();
     }
 
-    #[test]
-    fn valid_coinbase_with_recoverable_output() {
-        let recovery_data = RecoveryData {
-            encryption_key: PrivateKey::random(&mut OsRng),
-        };
-
-        let p = TestParams::new();
-        let (builder, rules, _factories) = get_builder();
-        let builder = builder
-            .with_block_height(42)
-            .with_fees(145 * uT)
-            .with_nonce(p.nonce.clone())
-            .with_spend_key(p.spend_key.clone())
-            .with_recovery_data(recovery_data.clone());
-        let (tx, _) = builder
-            .build(rules.consensus_constants(42), rules.emission_schedule())
-            .unwrap();
-        let block_reward = rules.emission_schedule().block_reward(42) + 145 * uT;
-
-        let output = &tx.body.outputs()[0];
-        let (committed_value, blinding_factor) = EncryptedData::decrypt_data(
-            &recovery_data.encryption_key,
-            &output.commitment,
-            &output.encrypted_data,
-        )
-        .unwrap();
-        assert_eq!(committed_value, block_reward);
-        assert_eq!(blinding_factor, p.spend_key);
-    }
-
-    #[test]
-    fn invalid_coinbase_maturity() {
-        let p = TestParams::new();
+    #[tokio::test]
+    async fn invalid_coinbase_maturity() {
+        let key_manager = create_test_core_key_manager_with_memory_db();
+        let p = TestParams::new(&key_manager).await;
         let (builder, rules, factories) = get_builder();
         let block_reward = rules.emission_schedule().block_reward(42) + 145 * uT;
         let builder = builder
             .with_block_height(42)
             .with_fees(145 * uT)
-            .with_nonce(p.nonce.clone())
-            .with_spend_key(p.spend_key);
+            .with_spend_key_id(p.spend_key)
+            .with_script_key_id(p.script_private_key);
         let (mut tx, _) = builder
             .build(rules.consensus_constants(42), rules.emission_schedule())
+            .await
             .unwrap();
         tx.body.outputs_mut()[0].features.maturity = 1;
         assert!(matches!(
@@ -455,30 +496,33 @@ mod test {
         ));
     }
 
-    #[test]
+    #[tokio::test]
     #[allow(clippy::identity_op)]
-    fn invalid_coinbase_value() {
-        let p = TestParams::new();
+    async fn invalid_coinbase_value() {
+        let key_manager = create_test_core_key_manager_with_memory_db();
+        let p = TestParams::new(&key_manager).await;
         let (builder, rules, factories) = get_builder();
         // We just want some small amount here.
         let missing_fee = rules.emission_schedule().block_reward(4200000) + (2 * uT);
         let builder = builder
             .with_block_height(42)
             .with_fees(1 * uT)
-            .with_nonce(p.nonce.clone())
-            .with_spend_key(p.spend_key.clone());
+            .with_spend_key_id(p.spend_key.clone())
+            .with_script_key_id(p.script_private_key.clone());
         let (mut tx, _) = builder
             .build(rules.consensus_constants(0), rules.emission_schedule())
+            .await
             .unwrap();
         let block_reward = rules.emission_schedule().block_reward(42) + missing_fee;
-        let builder = CoinbaseBuilder::new(factories.clone());
+        let builder = CoinbaseBuilder::new(key_manager.clone());
         let builder = builder
             .with_block_height(4200000)
             .with_fees(1 * uT)
-            .with_nonce(p.nonce.clone())
-            .with_spend_key(p.spend_key.clone());
+            .with_spend_key_id(p.spend_key.clone())
+            .with_script_key_id(p.script_private_key.clone());
         let (tx2, _) = builder
             .build(rules.consensus_constants(0), rules.emission_schedule())
+            .await
             .unwrap();
         let mut coinbase2 = tx2.body.outputs()[0].clone();
         let mut coinbase_kernel2 = tx2.body.kernels()[0].clone();
@@ -498,15 +542,22 @@ mod test {
             Err(TransactionError::InvalidCoinbase)
         ));
         // lets construct a correct one now, with the correct amount.
-        let builder = CoinbaseBuilder::new(factories.clone());
+        let builder = CoinbaseBuilder::new(key_manager.clone());
         let builder = builder
             .with_block_height(42)
             .with_fees(missing_fee)
-            .with_nonce(p.nonce.clone())
-            .with_spend_key(p.spend_key);
+            .with_spend_key_id(p.spend_key)
+            .with_script_key_id(p.script_private_key);
         let (tx3, _) = builder
             .build(rules.consensus_constants(0), rules.emission_schedule())
+            .await
             .unwrap();
+        dbg!(&tx3.body.check_coinbase_output(
+            block_reward,
+            rules.consensus_constants(0).coinbase_lock_height(),
+            &factories,
+            42
+        ));
         assert!(tx3
             .body
             .check_coinbase_output(
@@ -517,34 +568,41 @@ mod test {
             )
             .is_ok());
     }
-    use tari_crypto::keys::PublicKey;
+    use tari_key_manager::key_manager_service::KeyManagerInterface;
 
-    use crate::transactions::transaction_components::TransactionKernelVersion;
+    use crate::{
+        core_key_manager::BaseLayerKeyManagerInterface,
+        test_helpers::create_test_core_key_manager_with_memory_db,
+        transactions::transaction_components::TransactionKernelVersion,
+    };
 
-    #[test]
+    #[tokio::test]
     #[allow(clippy::identity_op)]
-    fn invalid_coinbase_amount() {
-        let p = TestParams::new();
+    async fn invalid_coinbase_amount() {
+        let key_manager = create_test_core_key_manager_with_memory_db();
+        let p = TestParams::new(&key_manager).await;
         let (builder, rules, factories) = get_builder();
         // We just want some small amount here.
         let missing_fee = rules.emission_schedule().block_reward(4200000) + (2 * uT);
         let builder = builder
             .with_block_height(42)
             .with_fees(1 * uT)
-            .with_nonce(p.nonce.clone())
-            .with_spend_key(p.spend_key.clone());
+            .with_spend_key_id(p.spend_key.clone())
+            .with_script_key_id(p.script_private_key.clone());
         let (mut tx, _) = builder
             .build(rules.consensus_constants(0), rules.emission_schedule())
+            .await
             .unwrap();
         let block_reward = rules.emission_schedule().block_reward(42) + missing_fee;
-        let builder = CoinbaseBuilder::new(factories.clone());
+        let builder = CoinbaseBuilder::new(key_manager.clone());
         let builder = builder
             .with_block_height(4200000)
             .with_fees(1 * uT)
-            .with_nonce(p.nonce.clone())
-            .with_spend_key(p.spend_key);
+            .with_spend_key_id(p.spend_key)
+            .with_script_key_id(p.script_private_key);
         let (tx2, output) = builder
             .build(rules.consensus_constants(0), rules.emission_schedule())
+            .await
             .unwrap();
         let mut tx_kernel_test = tx.clone();
 
@@ -552,18 +610,32 @@ mod test {
         let coinbase2 = tx2.body.outputs()[0].clone();
         let mut coinbase_kernel2 = tx2.body.kernels()[0].clone();
         coinbase_kernel2.features = KernelFeatures::empty();
-        // fix signature
-        let p2 = TestParams::new();
-        let challenge = TransactionKernel::build_kernel_signature_challenge(
+        let p2 = TestParams::new(&key_manager).await;
+        let kernel_message = TransactionKernel::build_kernel_signature_message(
             &TransactionKernelVersion::get_current_version(),
-            &p2.public_nonce,
-            &PublicKey::from_secret_key(&output.spending_key),
             coinbase_kernel2.fee,
             coinbase_kernel2.lock_height,
             &KernelFeatures::empty(),
             &None,
         );
-        coinbase_kernel2.excess_sig = Signature::sign_raw(&output.spending_key, p2.nonce, &challenge).unwrap();
+        let excess = key_manager
+            .get_public_key_at_key_id(&output.spending_key_id)
+            .await
+            .unwrap();
+        let nonce = key_manager.get_public_key_at_key_id(&p2.kernel_nonce).await.unwrap();
+        let sig = key_manager
+            .get_partial_kernel_signature(
+                &output.spending_key_id,
+                &p2.kernel_nonce,
+                &nonce,
+                &excess,
+                &TransactionKernelVersion::get_current_version(),
+                &kernel_message,
+            )
+            .await
+            .unwrap();
+
+        coinbase_kernel2.excess_sig = sig;
 
         tx.body.add_output(coinbase2);
         tx.body.add_kernel(coinbase_kernel2);
@@ -603,8 +675,8 @@ mod test {
         body_validator
             .validate(
                 tx.body(),
-                &PrivateKey::default(),
-                &PrivateKey::default(),
+                &tx.offset,
+                &tx.script_offset,
                 Some(block_reward),
                 None,
                 u64::MAX,

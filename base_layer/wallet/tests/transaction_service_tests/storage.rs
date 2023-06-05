@@ -35,7 +35,7 @@ use tari_core::{
     covenants::Covenant,
     transactions::{
         tari_amount::{uT, MicroTari},
-        test_helpers::{create_non_recoverable_unblinded_output, TestParams},
+        test_helpers::{create_key_manager_output_with_data, TestParams},
         transaction_components::{OutputFeatures, Transaction},
         transaction_protocol::sender::TransactionSenderMessage,
         CryptoFactories,
@@ -66,7 +66,7 @@ use tempfile::tempdir;
 pub fn test_db_backend<T: TransactionBackend + 'static>(backend: T) {
     let mut db = TransactionDatabase::new(backend);
     let factories = CryptoFactories::default();
-    let input = create_non_recoverable_unblinded_output(
+    let input = create_key_manager_output_with_data(
         TariScript::default(),
         OutputFeatures::default(),
         &TestParams::new(),
@@ -101,7 +101,7 @@ pub fn test_db_backend<T: TransactionBackend + 'static>(backend: T) {
         )
         .with_change_script(script!(Nop), ExecutionStack::default(), PrivateKey::random(&mut OsRng));
 
-    let stp = builder.build(&factories, None, u64::MAX).unwrap();
+    let stp = builder.build().await.unwrap();
 
     let messages = vec!["Hey!".to_string(), "Yo!".to_string(), "Sup!".to_string()];
     let amounts = vec![MicroTari::from(10_000), MicroTari::from(23_000), MicroTari::from(5_000)];

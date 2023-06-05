@@ -37,6 +37,7 @@ use crate::transactions::{
     tari_amount::MicroTari,
     transaction_components::{
         EncryptedData,
+        RangeProofType,
         TransactionError,
         TransactionInputVersion,
         TransactionKernelVersion,
@@ -159,6 +160,7 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
     async fn get_metadata_signature_ephemeral_commitment(
         &self,
         nonce_id: &KeyId<PublicKey>,
+        range_proof_type: RangeProofType,
     ) -> Result<Commitment, TransactionError>;
 
     async fn get_metadata_signature(
@@ -181,6 +183,7 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
         ephemeral_pubkey: &PublicKey,
         tx_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
+        range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError>;
 
     async fn get_sender_partial_metadata_signature(

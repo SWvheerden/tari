@@ -2265,7 +2265,7 @@ mod test {
         covenants::Covenant,
         transactions::{
             tari_amount::MicroTari,
-            test_helpers::{create_non_recoverable_unblinded_output, TestParams},
+            test_helpers::{create_key_manager_output_with_data, TestParams},
             transaction_components::{OutputFeatures, Transaction},
             transaction_protocol::sender::TransactionSenderMessage,
             CryptoFactories,
@@ -2333,7 +2333,7 @@ mod test {
         let constants = create_consensus_constants(0);
         let mut builder = SenderTransactionProtocol::builder(1, constants);
         let test_params = TestParams::new();
-        let input = create_non_recoverable_unblinded_output(
+        let input = create_key_manager_output_with_data(
             TariScript::default(),
             OutputFeatures::default(),
             &test_params,
@@ -2366,7 +2366,7 @@ mod test {
             )
             .with_change_script(script!(Nop), ExecutionStack::default(), PrivateKey::random(&mut OsRng));
 
-        let mut stp = builder.build(&factories, None, u64::MAX).unwrap();
+        let mut stp = builder.build().await.unwrap();
 
         let address = TariAddress::new(
             PublicKey::from_secret_key(&PrivateKey::random(&mut OsRng)),

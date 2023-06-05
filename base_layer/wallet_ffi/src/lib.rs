@@ -8555,7 +8555,7 @@ mod test {
     use tari_comms::peer_manager::PeerFeatures;
     use tari_core::{
         covenant,
-        transactions::test_helpers::{create_non_recoverable_unblinded_output, create_test_input, TestParams},
+        transactions::test_helpers::{create_key_manager_output_with_data, create_test_input, TestParams},
     };
     use tari_crypto::ristretto::pedersen::extended_commitment_factory::ExtendedPedersenCommitmentFactory;
     use tari_key_manager::{mnemonic::MnemonicLanguage, mnemonic_wordlists};
@@ -10700,7 +10700,7 @@ mod test {
             let mut error = 0;
             let error_ptr = &mut error as *mut c_int;
             // Test the consistent features case
-            let utxo_1 = create_non_recoverable_unblinded_output(
+            let utxo_1 = create_key_manager_output_with_data(
                 script!(Nop),
                 OutputFeatures::default(),
                 &TestParams::new(),
@@ -10831,7 +10831,7 @@ mod test {
             );
 
             // Test the consistent features case
-            let utxo_1 = create_non_recoverable_unblinded_output(
+            let utxo_1 = create_key_manager_output_with_data(
                 script!(Nop),
                 OutputFeatures::default(),
                 &TestParams::new(),
@@ -10916,7 +10916,7 @@ mod test {
             let mut error = 0;
             let error_ptr = &mut error as *mut c_int;
 
-            let utxo_1 = create_non_recoverable_unblinded_output(
+            let utxo_1 = create_key_manager_output_with_data(
                 script!(Nop),
                 OutputFeatures::default(),
                 &TestParams::new(),

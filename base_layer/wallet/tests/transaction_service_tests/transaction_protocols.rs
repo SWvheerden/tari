@@ -197,7 +197,7 @@ pub async fn add_transaction_to_database(
 ) {
     let factories = CryptoFactories::default();
     let (_utxo, uo0) = make_non_recoverable_input(&mut OsRng, 10 * amount, &factories.commitment).await;
-    let (txs1, _uou1) = schema_to_transaction(&[txn_schema!(from: vec![uo0], to: vec![amount])]);
+    let (txs1, _uou1) = schema_to_transaction(&[txn_schema!(from: vec![uo0], to: vec![amount])]).await;
     let tx1 = (*txs1[0]).clone();
     let completed_tx1 = CompletedTransaction::new(
         tx_id,

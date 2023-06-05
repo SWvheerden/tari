@@ -36,7 +36,7 @@ use tari_script::{ExecutionStack, TariScript};
 use super::TransactionOutputVersion;
 use crate::{
     borsh::SerializedSize,
-    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch},
+    core_key_manager::BaseLayerKeyManagerInterface,
     covenants::Covenant,
     transactions::{
         tari_amount::MicroTari,
@@ -190,95 +190,6 @@ impl KeyManagerOutput {
             input.input_data,
             input.script_signature,
         ))
-    }
-
-    pub async fn sign_metadata_signature_as_sender_receiver<KM: BaseLayerKeyManagerInterface>(
-        &mut self,
-        key_manager: &KM,
-        sender_offset_private_key_id: &KeyId<PublicKey>,
-    ) -> Result<(), TransactionError> {
-        let metadata_message = TransactionOutput::build_metadata_signature_message(
-            &self.version,
-            &self.script,
-            &self.features,
-            &self.covenant,
-            &self.encrypted_data,
-            self.minimum_value_promise,
-        );
-        let ephemeral_commitment_nonce_id = key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await?;
-        let ephemeral_pubkey_nonce_id = key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await?;
-        let ephemeral_pubkey = key_manager.get_public_key_at_key_id(&ephemeral_pubkey_nonce_id).await?;
-        let ephemeral_commitment = key_manager
-            .get_metadata_signature_ephemeral_commitment(&ephemeral_commitment_nonce_id)
-            .await?;
-        let commitment = key_manager
-            .get_commitment(&self.spending_key_id, &self.value.into())
-            .await?;
-
-        let receiver_metadata_signature = key_manager
-            .get_receiver_partial_metadata_signature(
-                &self.spending_key_id,
-                &self.value.into(),
-                &ephemeral_commitment_nonce_id,
-                &self.sender_offset_public_key,
-                &ephemeral_pubkey,
-                &self.version,
-                &metadata_message,
-            )
-            .await?;
-        let sender_metadata_signature = key_manager
-            .get_sender_partial_metadata_signature(
-                &ephemeral_pubkey_nonce_id,
-                sender_offset_private_key_id,
-                &commitment,
-                &ephemeral_commitment,
-                &self.version,
-                &metadata_message,
-            )
-            .await?;
-        self.metadata_signature = &receiver_metadata_signature + &sender_metadata_signature;
-        Ok(())
-    }
-
-    pub async fn sign_metadata_signature_as_receiver<KM: BaseLayerKeyManagerInterface>(
-        &mut self,
-        key_manager: &KM,
-        ephemeral_commitment_nonce_id: Option<KeyId<PublicKey>>,
-        ephemeral_pubkey: &PublicKey,
-    ) -> Result<(), TransactionError> {
-        let metadata_message = TransactionOutput::build_metadata_signature_message(
-            &self.version,
-            &self.script,
-            &self.features,
-            &self.covenant,
-            &self.encrypted_data,
-            self.minimum_value_promise,
-        );
-        let ephemeral_commitment_nonce = match ephemeral_commitment_nonce_id {
-            Some(id) => id,
-            None => {
-                key_manager
-                    .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-                    .await?
-            },
-        };
-        let receiver_metadata_signature = key_manager
-            .get_receiver_partial_metadata_signature(
-                &self.spending_key_id,
-                &self.value.into(),
-                &ephemeral_commitment_nonce,
-                &self.sender_offset_public_key,
-                ephemeral_pubkey,
-                &self.version,
-                &metadata_message,
-            )
-            .await?;
-        self.metadata_signature = receiver_metadata_signature;
-        Ok(())
     }
 
     pub async fn as_transaction_output<KM: BaseLayerKeyManagerInterface>(

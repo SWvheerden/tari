@@ -413,32 +413,37 @@ fn chain_balance_validation_burned() {
 mod transaction_validator {
     use super::*;
     use crate::{
+        test_helpers::create_test_core_key_manager_with_memory_db,
         transactions::transaction_components::TransactionError,
         validation::transaction::TransactionInternalConsistencyValidator,
     };
 
-    #[test]
-    fn it_rejects_coinbase_outputs() {
+    #[tokio::test]
+    async fn it_rejects_coinbase_outputs() {
+        let key_manager = create_test_core_key_manager_with_memory_db();
         let consensus_manager = ConsensusManagerBuilder::new(Network::LocalNet).build();
         let db = create_store_with_consensus(consensus_manager.clone());
         let factories = CryptoFactories::default();
         let validator = TransactionInternalConsistencyValidator::new(true, consensus_manager, factories);
         let features = OutputFeatures::create_coinbase(0, None);
-        let (tx, _, _) = tx!(MicroTari(100_000), fee: MicroTari(5), inputs: 1, outputs: 1, features: features);
+        let (tx, _, _) =
+            tx!(MicroTari(100_000), fee: MicroTari(5), inputs: 1, outputs: 1, features: features, &key_manager);
         let tip = db.get_chain_metadata().unwrap();
         let err = validator.validate_with_current_tip(&tx, tip).unwrap_err();
         unpack_enum!(ValidationError::ErroneousCoinbaseOutput = err);
     }
 
-    #[test]
-    fn coinbase_extra_must_be_empty() {
+    #[tokio::test]
+    async fn coinbase_extra_must_be_empty() {
+        let key_manager = create_test_core_key_manager_with_memory_db();
         let consensus_manager = ConsensusManagerBuilder::new(Network::LocalNet).build();
         let db = create_store_with_consensus(consensus_manager.clone());
         let factories = CryptoFactories::default();
         let validator = TransactionInternalConsistencyValidator::new(true, consensus_manager, factories);
         let mut features = OutputFeatures { ..Default::default() };
         features.coinbase_extra = b"deadbeef".to_vec();
-        let (tx, _, _) = tx!(MicroTari(100_000), fee: MicroTari(5), inputs: 1, outputs: 1, features: features);
+        let (tx, _, _) =
+            tx!(MicroTari(100_000), fee: MicroTari(5), inputs: 1, outputs: 1, features: features, &key_manager);
         let tip = db.get_chain_metadata().unwrap();
         let err = validator.validate_with_current_tip(&tx, tip).unwrap_err();
         assert!(matches!(

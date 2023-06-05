@@ -30,6 +30,7 @@ pub use kernel_builder::KernelBuilder;
 pub use kernel_features::KernelFeatures;
 pub use kernel_sum::KernelSum;
 pub use key_manager_output::KeyManagerOutput;
+pub use key_manager_output_builder::KeyManagerOutputBuilder;
 pub use output_features::OutputFeatures;
 pub use output_features_version::OutputFeaturesVersion;
 pub use output_type::OutputType;

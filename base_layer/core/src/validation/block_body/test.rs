@@ -30,7 +30,8 @@ use crate::{
     block_spec,
     blocks::BlockValidationError,
     consensus::{ConsensusConstantsBuilder, ConsensusManager},
-    test_helpers::{blockchain::TestBlockchain, BlockSpec},
+    core_key_manager::{CoreKeyManagerBranch, KeyId},
+    test_helpers::{blockchain::TestBlockchain, create_test_core_key_manager_with_memory_db, BlockSpec},
     transactions::{
         aggregated_body::AggregateBody,
         tari_amount::T,
@@ -104,20 +105,22 @@ async fn it_checks_exactly_one_coinbase() {
     let (blockchain, validator) = setup();
 
     let (mut block, coinbase) = blockchain.create_unmined_block(block_spec!("A1", parent: "GB"));
-
-    let (_, coinbase_output) = CoinbaseBuilder::new(CryptoFactories::default())
+    let key_manager = create_test_core_key_manager_with_memory_db();
+    let spend_key_id = KeyId::Managed {
+        branch: CoreKeyManagerBranch::Coinbase.get_branch_key(),
+        index: 42,
+    };
+    let (_, coinbase_output) = CoinbaseBuilder::new(key_manager.clone())
         .with_block_height(1)
         .with_fees(0.into())
-        .with_nonce(0.into())
-        .with_spend_key(42.into())
+        .with_spend_key_id(spend_key_id)
         .build_with_reward(blockchain.rules().consensus_constants(1), coinbase.value)
+        .await
         .unwrap();
 
-    block.body.add_output(
-        coinbase_output
-            .as_transaction_output(&CryptoFactories::default())
-            .unwrap(),
-    );
+    block
+        .body
+        .add_output(coinbase_output.as_transaction_output(&key_manager).await.unwrap());
     let block = blockchain.mine_block("GB", block, 1.into());
 
     let txn = blockchain.db().db_read_access().unwrap();
@@ -144,7 +147,7 @@ async fn it_checks_double_spends() {
     let (mut blockchain, validator) = setup();
 
     let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).unwrap();
-    let (txs, _) = schema_to_transaction(&[txn_schema!(from: vec![coinbase_a], to: vec![50 * T])]);
+    let (txs, _) = schema_to_transaction(&[txn_schema!(from: vec![coinbase_a], to: vec![50 * T])]).await;
 
     blockchain
         .add_next_tip(block_spec!("1", transactions: txs.iter().map(|t| (**t).clone()).collect()))
@@ -166,7 +169,7 @@ async fn it_checks_input_maturity() {
     let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).unwrap();
     let mut schema = txn_schema!(from: vec![coinbase_a], to: vec![50 * T]);
     schema.from[0].features.maturity = 100;
-    let (txs, _) = schema_to_transaction(&[schema]);
+    let (txs, _) = schema_to_transaction(&[schema]).await;
 
     let (block, _) = blockchain.create_next_tip(
         BlockSpec::new()
@@ -189,7 +192,7 @@ async fn it_checks_txo_sort_order() {
     let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).unwrap();
 
     let schema1 = txn_schema!(from: vec![coinbase_a], to: vec![50 * T, 12 * T]);
-    let (txs, _) = schema_to_transaction(&[schema1]);
+    let (txs, _) = schema_to_transaction(&[schema1]).await;
     let txs = txs.into_iter().map(|t| Arc::try_unwrap(t).unwrap()).collect::<Vec<_>>();
 
     let (mut block, _) = blockchain.create_unmined_block(block_spec!("B->A", transactions: txs));
@@ -220,7 +223,7 @@ async fn it_limits_the_script_byte_size() {
 
     let mut schema1 = txn_schema!(from: vec![coinbase_a], to: vec![50 * T, 12 * T]);
     schema1.script = script!(Nop Nop Nop);
-    let (txs, _) = schema_to_transaction(&[schema1]);
+    let (txs, _) = schema_to_transaction(&[schema1]).await;
     let txs = txs.into_iter().map(|t| Arc::try_unwrap(t).unwrap()).collect::<Vec<_>>();
     let (block, _) = blockchain.create_next_tip(block_spec!("B", transactions: txs));
 
@@ -244,7 +247,7 @@ async fn it_rejects_invalid_input_metadata() {
 
     let mut schema1 = txn_schema!(from: vec![coinbase_a], to: vec![50 * T, 12 * T]);
     schema1.from[0].sender_offset_public_key = Default::default();
-    let (txs, _) = schema_to_transaction(&[schema1]);
+    let (txs, _) = schema_to_transaction(&[schema1]).await;
     let txs = txs.into_iter().map(|t| Arc::try_unwrap(t).unwrap()).collect::<Vec<_>>();
     let (block, _) = blockchain.create_next_tip(block_spec!("B", transactions: txs));
 
@@ -259,13 +262,13 @@ async fn it_rejects_zero_conf_double_spends() {
     let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).unwrap();
 
     let schema = txn_schema!(from: vec![coinbase], to: vec![201 * T]);
-    let (initial_tx, outputs) = schema_to_transaction(&[schema]);
+    let (initial_tx, outputs) = schema_to_transaction(&[schema]).await;
 
     let schema = txn_schema!(from: vec![outputs[0].clone()], to: vec![200 * T]);
-    let (first_spend, _) = schema_to_transaction(&[schema]);
+    let (first_spend, _) = schema_to_transaction(&[schema]).await;
 
     let schema = txn_schema!(from: vec![outputs[0].clone()], to: vec![150 * T]);
-    let (double_spend, _) = schema_to_transaction(&[schema]);
+    let (double_spend, _) = schema_to_transaction(&[schema]).await;
 
     let transactions = initial_tx
         .into_iter()
@@ -284,8 +287,8 @@ mod body_only {
     use super::*;
     use crate::validation::block_body::BlockBodyFullValidator;
 
-    #[test]
-    fn it_rejects_invalid_input_metadata() {
+    #[tokio::test]
+    async fn it_rejects_invalid_input_metadata() {
         let rules = ConsensusManager::builder(Network::LocalNet)
             .add_consensus_constants(
                 ConsensusConstantsBuilder::new(Network::LocalNet)
@@ -300,7 +303,7 @@ mod body_only {
 
         let mut schema1 = txn_schema!(from: vec![coinbase_a], to: vec![50 * T, 12 * T]);
         schema1.from[0].sender_offset_public_key = Default::default();
-        let (txs, _) = schema_to_transaction(&[schema1]);
+        let (txs, _) = schema_to_transaction(&[schema1]).await;
         let txs = txs.into_iter().map(|t| Arc::try_unwrap(t).unwrap()).collect::<Vec<_>>();
         let (block, _) = blockchain.create_next_tip(BlockSpec::new().with_transactions(txs).finish());
 
@@ -320,8 +323,8 @@ mod orphan_validator {
         validation::block_body::BlockBodyInternalConsistencyValidator,
     };
 
-    #[test]
-    fn it_rejects_zero_conf_double_spends() {
+    #[tokio::test]
+    async fn it_rejects_zero_conf_double_spends() {
         let rules = ConsensusManager::builder(Network::LocalNet)
             .add_consensus_constants(
                 ConsensusConstantsBuilder::new(Network::LocalNet)
@@ -334,13 +337,13 @@ mod orphan_validator {
         let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).unwrap();
 
         let schema = txn_schema!(from: vec![coinbase], to: vec![201 * T]);
-        let (initial_tx, outputs) = schema_to_transaction(&[schema]);
+        let (initial_tx, outputs) = schema_to_transaction(&[schema]).await;
 
         let schema = txn_schema!(from: vec![outputs[0].clone()], to: vec![200 * T]);
-        let (first_spend, _) = schema_to_transaction(&[schema]);
+        let (first_spend, _) = schema_to_transaction(&[schema]).await;
 
         let schema = txn_schema!(from: vec![outputs[0].clone()], to: vec![150 * T]);
-        let (double_spend, _) = schema_to_transaction(&[schema]);
+        let (double_spend, _) = schema_to_transaction(&[schema]).await;
 
         let transactions = initial_tx
             .into_iter()
@@ -354,8 +357,8 @@ mod orphan_validator {
         assert!(matches!(err, ValidationError::UnsortedOrDuplicateInput));
     }
 
-    #[test]
-    fn it_rejects_unpermitted_output_types() {
+    #[tokio::test]
+    async fn it_rejects_unpermitted_output_types() {
         let rules = ConsensusManager::builder(Network::LocalNet)
             .add_consensus_constants(
                 ConsensusConstantsBuilder::new(Network::LocalNet)
@@ -369,7 +372,7 @@ mod orphan_validator {
         let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).unwrap();
 
         let schema = txn_schema!(from: vec![coinbase], to: vec![201 * T]);
-        let (tx, _) = schema_to_transaction(&[schema]);
+        let (tx, _) = schema_to_transaction(&[schema]).await;
 
         let transactions = tx.into_iter().map(|b| Arc::try_unwrap(b).unwrap()).collect::<Vec<_>>();
 
@@ -379,8 +382,8 @@ mod orphan_validator {
         assert_eq!(output_type, OutputType::Standard);
     }
 
-    #[test]
-    fn it_rejects_unpermitted_range_proof_types() {
+    #[tokio::test]
+    async fn it_rejects_unpermitted_range_proof_types() {
         let rules = ConsensusManager::builder(Network::LocalNet)
             .add_consensus_constants(
                 ConsensusConstantsBuilder::new(Network::LocalNet)
@@ -394,7 +397,7 @@ mod orphan_validator {
         let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).unwrap();
 
         let schema = txn_schema!(from: vec![coinbase], to: vec![201 * T]);
-        let (tx, _) = schema_to_transaction(&[schema]);
+        let (tx, _) = schema_to_transaction(&[schema]).await;
 
         let transactions = tx.into_iter().map(|b| Arc::try_unwrap(b).unwrap()).collect::<Vec<_>>();
 

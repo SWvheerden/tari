@@ -27,25 +27,29 @@ use std::{iter, mem::size_of, path::Path, sync::Arc};
 
 pub use block_spec::{BlockSpec, BlockSpecs};
 use chacha20poly1305::{Key, KeyInit, XChaCha20Poly1305};
+use futures::executor::block_on;
 use rand::{distributions::Alphanumeric, rngs::OsRng, Rng, RngCore};
 use tari_common::configuration::Network;
-use tari_common_sqlite::connection::DbConnection;
+use tari_common_sqlite::connection::{DbConnection, DbConnectionUrl};
 use tari_common_types::types::PublicKey;
 use tari_comms::PeerManager;
 use tari_crypto::keys::PublicKey as PublicKeyT;
 use tari_key_manager::{
     cipher_seed::CipherSeed,
-    key_manager_service::storage::{database::KeyManagerDatabase, sqlite_db::KeyManagerSqliteDatabase},
+    key_manager_service::{
+        storage::{database::KeyManagerDatabase, sqlite_db::KeyManagerSqliteDatabase},
+        KeyId,
+    },
 };
 use tari_storage::{lmdb_store::LMDBBuilder, LMDBWrapper};
 
 use crate::{
     blocks::{Block, BlockHeader, BlockHeaderAccumulatedData, ChainHeader},
     consensus::{ConsensusConstants, ConsensusManager},
-    core_key_manager::CoreKeyManagerHandle,
+    core_key_manager::{CoreKeyManagerBranch, CoreKeyManagerHandle},
     proof_of_work::{sha3x_difficulty, AchievedTargetDifficulty, Difficulty},
     transactions::{
-        transaction_components::{Transaction, UnblindedOutput},
+        transaction_components::{KeyManagerOutput, Transaction},
         CoinbaseBuilder,
         CryptoFactories,
     },
@@ -61,7 +65,7 @@ fn random_string(len: usize) -> String {
 }
 
 pub fn create_test_core_key_manager_with_memory_db() -> TestKeyManager {
-    let connection = DbConnection::connect_memory(random_string(8)).unwrap();
+    let connection = DbConnection::connect_url(&DbConnectionUrl::MemoryShared(random_string(8))).unwrap();
     let cipher = CipherSeed::new();
 
     let mut key = [0u8; size_of::<Key>()];
@@ -94,7 +98,12 @@ pub fn create_orphan_block(block_height: u64, transactions: Vec<Transaction>, co
     header.into_builder().with_transactions(transactions).build()
 }
 
-pub fn create_block(rules: &ConsensusManager, prev_block: &Block, spec: BlockSpec) -> (Block, UnblindedOutput) {
+pub fn create_block(
+    rules: &ConsensusManager,
+    prev_block: &Block,
+    spec: BlockSpec,
+    km: &TestKeyManager,
+) -> (Block, KeyManagerOutput) {
     let mut header = BlockHeader::from_previous(&prev_block.header);
     let block_height = spec.height_override.unwrap_or(prev_block.header.height + 1);
     header.height = block_height;
@@ -110,13 +119,18 @@ pub fn create_block(rules: &ConsensusManager, prev_block: &Block, spec: BlockSpe
         )
     });
 
-    let (coinbase, coinbase_output) = CoinbaseBuilder::new(CryptoFactories::default())
-        .with_block_height(header.height)
-        .with_fees(0.into())
-        .with_nonce(0.into())
-        .with_spend_key(block_height.into())
-        .build_with_reward(rules.consensus_constants(block_height), reward)
-        .unwrap();
+    let spend_key_id = KeyId::Managed {
+        branch: CoreKeyManagerBranch::Coinbase.get_branch_key(),
+        index: block_height,
+    };
+    let (coinbase, coinbase_output) = block_on(
+        CoinbaseBuilder::new(km.clone())
+            .with_block_height(header.height)
+            .with_fees(0.into())
+            .with_spend_key_id(spend_key_id)
+            .build_with_reward(rules.consensus_constants(block_height), reward),
+    )
+    .unwrap();
 
     let mut block = header
         .into_builder()

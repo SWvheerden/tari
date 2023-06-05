@@ -29,12 +29,13 @@ use crate::{
     test_helpers::{
         blockchain::{create_new_blockchain, TempDatabase},
         create_block,
+        create_test_core_key_manager_with_memory_db,
         BlockSpec,
     },
     transactions::{
         tari_amount::T,
         test_helpers::schema_to_transaction,
-        transaction_components::{Transaction, UnblindedOutput},
+        transaction_components::{KeyManagerOutput, Transaction},
     },
     txn_schema,
 };
@@ -47,14 +48,16 @@ fn create_next_block(
     db: &BlockchainDatabase<TempDatabase>,
     prev_block: &Block,
     transactions: Vec<Arc<Transaction>>,
-) -> (Arc<Block>, UnblindedOutput) {
+) -> (Arc<Block>, KeyManagerOutput) {
     let rules = db.rules();
+    let key_manager = create_test_core_key_manager_with_memory_db();
     let (block, output) = create_block(
         rules,
         prev_block,
         BlockSpec::new()
             .with_transactions(transactions.into_iter().map(|t| (*t).clone()).collect())
             .finish(),
+        &key_manager,
     );
     let block = apply_mmr_to_block(db, block);
     (Arc::new(block), output)
@@ -75,7 +78,7 @@ fn apply_mmr_to_block(db: &BlockchainDatabase<TempDatabase>, block: Block) -> Bl
 fn add_many_chained_blocks(
     size: usize,
     db: &BlockchainDatabase<TempDatabase>,
-) -> (Vec<Arc<Block>>, Vec<UnblindedOutput>) {
+) -> (Vec<Arc<Block>>, Vec<KeyManagerOutput>) {
     let last_header = db.fetch_last_header().unwrap();
     let mut prev_block = db
         .fetch_block(last_header.height, true)
@@ -489,13 +492,13 @@ mod fetch_header_containing_kernel_mmr {
         matches!(err, ChainStorageError::ValueNotFound { .. });
     }
 
-    #[test]
-    fn it_returns_corresponding_header() {
+    #[tokio::test]
+    async fn it_returns_corresponding_header() {
         let db = setup();
         let genesis = db.fetch_block(0, true).unwrap();
         let (blocks, outputs) = add_many_chained_blocks(1, &db);
         let num_genesis_kernels = genesis.block().body.kernels().len() as u64;
-        let (txns, _) = schema_to_transaction(&[txn_schema!(from: vec![outputs[0].clone()], to: vec![50 * T])]);
+        let (txns, _) = schema_to_transaction(&[txn_schema!(from: vec![outputs[0].clone()], to: vec![50 * T])]).await;
 
         let (block, _) = create_next_block(&db, &blocks[0], txns);
         db.add_block(block).unwrap();
@@ -593,8 +596,8 @@ mod validator_node_merkle_root {
         assert_eq!(blocks[0].header.validator_node_mr, vn_mmr.get_merkle_root());
     }
 
-    #[test]
-    fn it_has_the_correct_merkle_root_for_current_vn_set() {
+    #[tokio::test]
+    async fn it_has_the_correct_merkle_root_for_current_vn_set() {
         let db = setup();
         let (blocks, outputs) = add_many_chained_blocks(1, &db);
 
@@ -606,7 +609,8 @@ mod validator_node_merkle_root {
             from: vec![outputs[0].clone()],
             to: vec![50 * T],
             features: features
-        )]);
+        )])
+        .await;
         let (block, _) = create_next_block(&db, &blocks[0], tx);
         db.add_block(block).unwrap().assert_added();
 

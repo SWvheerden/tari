@@ -51,6 +51,7 @@ use crate::{
         tari_amount::MicroTari,
         transaction_components::{
             EncryptedData,
+            RangeProofType,
             TransactionError,
             TransactionInputVersion,
             TransactionKernelVersion,
@@ -380,11 +381,12 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     async fn get_metadata_signature_ephemeral_commitment(
         &self,
         nonce_id: &KeyId<PublicKey>,
+        range_proof_type: RangeProofType,
     ) -> Result<Commitment, TransactionError> {
         (*self.core_key_manager_inner)
             .read()
             .await
-            .get_metadata_signature_ephemeral_commitment(nonce_id)
+            .get_metadata_signature_ephemeral_commitment(nonce_id, range_proof_type)
             .await
     }
 
@@ -422,6 +424,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         ephemeral_pubkey: &PublicKey,
         tx_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
+        range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError> {
         (*self.core_key_manager_inner)
             .read()
@@ -434,6 +437,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
                 ephemeral_pubkey,
                 tx_version,
                 metadata_signature_message,
+                range_proof_type,
             )
             .await
     }
