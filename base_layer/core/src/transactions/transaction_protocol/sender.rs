@@ -971,8 +971,8 @@ mod test {
         );
     }
 
-    #[test]
-    fn test_metadata_signature_finalize() {
+    #[tokio::test]
+    async fn test_metadata_signature_finalize() {
         // Defaults
         let commitment_factory = CommitmentFactory::default();
         let crypto_factory = CryptoFactories::default();
@@ -1054,19 +1054,13 @@ mod test {
 
     #[tokio::test]
     async fn zero_recipients() {
-        let factories = CryptoFactories::default();
         let key_manager = create_test_core_key_manager_with_memory_db();
         let p1 = TestParams::new(&key_manager).await;
         let p2 = TestParams::new(&key_manager).await;
-        let (utxo, input) = create_test_input(MicroTari(1200), 0, &key_manager).await;
+        let (_utxo, input) = create_test_input(MicroTari(1200), 0, &key_manager).await;
         let mut builder = SenderTransactionProtocol::builder(create_consensus_constants(0), key_manager.clone());
         let script = TariScript::default();
         let output_features = OutputFeatures::default();
-        let change = TestParams::new(&key_manager).await;
-        let script_key = key_manager
-            .get_public_key_at_key_id(&change.script_private_key)
-            .await
-            .unwrap();
         let change = TestParams::new(&key_manager).await;
         let script_key = key_manager
             .get_public_key_at_key_id(&change.script_private_key)
@@ -1122,7 +1116,6 @@ mod test {
 
     #[tokio::test]
     async fn single_recipient_no_change() {
-        let factories = CryptoFactories::default();
         // Alice's parameters
         let key_manager = create_test_core_key_manager_with_memory_db();
         let alice_key = TestParams::new(&key_manager).await;
@@ -1321,13 +1314,12 @@ mod test {
 
     #[tokio::test]
     async fn single_recipient_range_proof_fail() {
-        let factories = CryptoFactories::new(32);
         // Alice's parameters
         let key_manager = create_test_core_key_manager_with_memory_db();
         let a = TestParams::new(&key_manager).await;
         // Bob's parameters
         let bob_key = TestParams::new(&key_manager).await;
-        let (utxo, input) = create_test_input((2u64.pow(32) + 2001).into(), 0, &key_manager).await;
+        let (_utxo, input) = create_test_input((2u64.pow(32) + 2001).into(), 0, &key_manager).await;
         let mut builder = SenderTransactionProtocol::builder(create_consensus_constants(0), key_manager.clone());
         let script = script!(Nop);
         let change = TestParams::new(&key_manager).await;
@@ -1399,12 +1391,10 @@ mod test {
 
     #[tokio::test]
     async fn disallow_fee_larger_than_amount() {
-        let factories = CryptoFactories::default();
         // Alice's parameters
         let key_manager = create_test_core_key_manager_with_memory_db();
-        let alice = TestParams::new(&key_manager).await;
         let (utxo_amount, fee_per_gram, amount) = (MicroTari(2500), MicroTari(10), MicroTari(500));
-        let (utxo, input) = create_test_input(utxo_amount, 0, &key_manager).await;
+        let (_utxo, input) = create_test_input(utxo_amount, 0, &key_manager).await;
         let script = script!(Nop);
         let mut builder = SenderTransactionProtocol::builder(create_consensus_constants(0), key_manager.clone());
         let change = TestParams::new(&key_manager).await;
@@ -1446,12 +1436,11 @@ mod test {
 
     #[tokio::test]
     async fn allow_fee_larger_than_amount() {
-        let factories = CryptoFactories::default();
         // Alice's parameters
         let key_manager = create_test_core_key_manager_with_memory_db();
         let alice = TestParams::new(&key_manager).await;
         let (utxo_amount, fee_per_gram, amount) = (MicroTari(2500), MicroTari(10), MicroTari(500));
-        let (utxo, input) = create_test_input(utxo_amount, 0, &key_manager).await;
+        let (_utxo, input) = create_test_input(utxo_amount, 0, &key_manager).await;
         let script = script!(Nop);
         let mut builder = SenderTransactionProtocol::builder(create_consensus_constants(0), key_manager.clone());
         let change = TestParams::new(&key_manager).await;
@@ -1493,7 +1482,6 @@ mod test {
 
     #[tokio::test]
     async fn single_recipient_with_rewindable_change_and_receiver_outputs_bulletproofs() {
-        let factories = CryptoFactories::default();
         // Alice's parameters
         let key_manager = create_test_core_key_manager_with_memory_db();
         let key_manager_bob = create_test_core_key_manager_with_memory_db();
@@ -1501,7 +1489,7 @@ mod test {
         // Bob's parameters
         let bob_test_params = TestParams::new(&key_manager_bob).await;
         let alice_value = MicroTari(25000);
-        let (utxo, input) = create_test_input(alice_value, 0, &key_manager).await;
+        let (_utxo, input) = create_test_input(alice_value, 0, &key_manager).await;
 
         let script = script!(Nop);
 

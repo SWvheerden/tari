@@ -712,7 +712,6 @@ mod test {
         covenants::Covenant,
         test_helpers::{create_consensus_constants, create_test_core_key_manager_with_memory_db},
         transactions::{
-            crypto_factories::CryptoFactories,
             fee::Fee,
             tari_amount::*,
             test_helpers::{create_key_manager_output_with_data, create_test_input, TestParams, UtxoTestParams},
@@ -725,7 +724,6 @@ mod test {
     #[tokio::test]
     async fn no_receivers() {
         // Create some inputs
-        let factories = CryptoFactories::default();
         let key_manager = create_test_core_key_manager_with_memory_db();
         let p = TestParams::new(&key_manager).await;
         let recp = TestParams::new(&key_manager).await;
@@ -756,7 +754,7 @@ mod test {
             )
             .await
             .unwrap();
-        let (utxo, input) = TestParams::new(&key_manager)
+        let (_utxo, input) = TestParams::new(&key_manager)
             .await
             .create_input(
                 UtxoTestParams {
@@ -766,7 +764,7 @@ mod test {
                 &key_manager,
             )
             .await;
-        builder.with_input(input);
+        builder.with_input(input).await.unwrap();
         builder
             .with_fee_per_gram(MicroTari(20))
             .with_recipient_data(
@@ -817,10 +815,9 @@ mod test {
     #[tokio::test]
     async fn no_change_or_receivers() {
         // Create some inputs
-        let factories = CryptoFactories::default();
         let key_manager = create_test_core_key_manager_with_memory_db();
         let p = TestParams::new(&key_manager).await;
-        let (utxo, input) = create_test_input(MicroTari(5000), 0, &key_manager).await;
+        let (_utxo, input) = create_test_input(MicroTari(5000), 0, &key_manager).await;
         let constants = create_consensus_constants(0);
         let expected_fee = Fee::from(*constants.transaction_weight()).calculate(
             MicroTari(4),
@@ -868,7 +865,6 @@ mod test {
     #[allow(clippy::identity_op)]
     async fn change_edge_case() {
         // Create some inputs
-        let factories = CryptoFactories::default();
         let key_manager = create_test_core_key_manager_with_memory_db();
         let p = TestParams::new(&key_manager).await;
         let constants = create_consensus_constants(0);
@@ -879,7 +875,7 @@ mod test {
         // outputs weight: 1060, kernel weight: 10, input weight: 9, output weight: 53,
 
         // Pay out so that I should get change, but not enough to pay for the output
-        let (utxo, input) = create_test_input(
+        let (_utxo, input) = create_test_input(
             // one under the amount required to pay the fee for a change output
             2000 * uT + tx_fee + fee_for_change_output - 1 * uT,
             0,
@@ -923,7 +919,6 @@ mod test {
     #[tokio::test]
     async fn too_many_inputs() {
         // Create some inputs
-        let factories = CryptoFactories::default();
         let key_manager = create_test_core_key_manager_with_memory_db();
         let p = TestParams::new(&key_manager).await;
 
@@ -947,7 +942,7 @@ mod test {
             .with_fee_per_gram(MicroTari(2));
 
         for _ in 0..=MAX_TRANSACTION_INPUTS {
-            let (utxo, input) = create_test_input(MicroTari(50), 0, &key_manager).await;
+            let (_utxo, input) = create_test_input(MicroTari(50), 0, &key_manager).await;
             builder.with_input(input).await.unwrap();
         }
         let err = builder.build().await.unwrap_err();
@@ -957,14 +952,13 @@ mod test {
     #[tokio::test]
     async fn fee_too_low() {
         // Create some inputs
-        let factories = CryptoFactories::default();
         let key_manager = create_test_core_key_manager_with_memory_db();
         let p = TestParams::new(&key_manager).await;
         let recipient = TestParams::new(&key_manager).await;
         let tx_fee = p
             .fee()
             .calculate(MicroTari(1), 1, 1, 1, p.get_size_for_default_features_and_scripts(1));
-        let (utxo, input) = create_test_input(500 * uT + tx_fee, 0, &key_manager).await;
+        let (_utxo, input) = create_test_input(500 * uT + tx_fee, 0, &key_manager).await;
         let script = script!(Nop);
         let output = create_key_manager_output_with_data(
             script.clone(),
@@ -1007,7 +1001,9 @@ mod test {
                 Default::default(),
                 0.into(),
                 MicroTari::zero(),
-            );
+            )
+            .await
+            .unwrap();
         // .with_change_script(script, ExecutionStack::default(), PrivateKey::default());
         let err = builder.build().await.unwrap_err();
         assert_eq!(err.message, "Fee is less than the minimum");
@@ -1017,10 +1013,9 @@ mod test {
     async fn not_enough_funds() {
         // Create some inputs
         let key_manager = create_test_core_key_manager_with_memory_db();
-        let factories = CryptoFactories::default();
         let p = TestParams::new(&key_manager).await;
         let recipient = TestParams::new(&key_manager).await;
-        let (utxo, input) = create_test_input(MicroTari(400), 0, &key_manager).await;
+        let (_utxo, input) = create_test_input(MicroTari(400), 0, &key_manager).await;
         let script = script!(Nop);
         let output = create_key_manager_output_with_data(
             script.clone(),
@@ -1064,7 +1059,8 @@ mod test {
                 0.into(),
                 MicroTari::zero(),
             )
-            .await;
+            .await
+            .unwrap();
         let err = builder.build().await.unwrap_err();
         assert_eq!(
             err.message,
@@ -1076,11 +1072,10 @@ mod test {
     async fn single_recipient() {
         // Create some inputs
         let key_manager = create_test_core_key_manager_with_memory_db();
-        let factories = CryptoFactories::default();
         let p = TestParams::new(&key_manager).await;
         let recipient = TestParams::new(&key_manager).await;
-        let (utxo1, input1) = create_test_input(MicroTari(2000), 0, &key_manager).await;
-        let (utxo2, input2) = create_test_input(MicroTari(3000), 0, &key_manager).await;
+        let (_utxo1, input1) = create_test_input(MicroTari(2000), 0, &key_manager).await;
+        let (_utxo2, input2) = create_test_input(MicroTari(3000), 0, &key_manager).await;
         let fee_per_gram = MicroTari(6);
 
         let script = script!(Nop);
@@ -1153,7 +1148,6 @@ mod test {
     #[tokio::test]
     async fn fail_range_proof() {
         // Create some inputs
-        let factories = CryptoFactories::new(32);
         let key_manager = create_test_core_key_manager_with_memory_db();
         let p = TestParams::new(&key_manager).await;
         let recipient = TestParams::new(&key_manager).await;
@@ -1169,7 +1163,7 @@ mod test {
         .await
         .unwrap();
         // Start the builder
-        let (utxo1, input1) = create_test_input((2u64.pow(32) + 20000u64).into(), 0, &key_manager).await;
+        let (_utxo1, input1) = create_test_input((2u64.pow(32) + 20000u64).into(), 0, &key_manager).await;
         let fee_per_gram = MicroTari(6);
         let constants = create_consensus_constants(0);
         let mut builder = SenderTransactionInitializer::new(&constants, key_manager.clone());

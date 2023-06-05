@@ -191,7 +191,7 @@ impl TestParams {
             .await
             .unwrap();
 
-        let mut output = KeyManagerOutputBuilder::new(params.value, self.spend_key.clone())
+        let output = KeyManagerOutputBuilder::new(params.value, self.spend_key.clone())
             .with_features(params.features)
             .with_script(params.script.clone())
             .with_encrypted_data(key_manager)

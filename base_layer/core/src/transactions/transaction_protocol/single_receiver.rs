@@ -107,9 +107,8 @@ impl SingleReceiverTransactionProtocol {
 
 #[cfg(test)]
 mod test {
-    use rand::rngs::OsRng;
-    use tari_common_types::types::{PrivateKey, PublicKey};
-    use tari_crypto::{keys::SecretKey, signatures::CommitmentAndPublicKeySignature};
+    use tari_common_types::types::PublicKey;
+    use tari_crypto::signatures::CommitmentAndPublicKeySignature;
     use tari_key_manager::key_manager_service::KeyManagerInterface;
     use tari_script::{script, ExecutionStack, TariScript};
 
@@ -117,7 +116,6 @@ mod test {
         covenants::Covenant,
         test_helpers::create_test_core_key_manager_with_memory_db,
         transactions::{
-            crypto_factories::CryptoFactories,
             tari_amount::*,
             test_helpers::TestParams,
             transaction_components::{
@@ -136,13 +134,6 @@ mod test {
             },
         },
     };
-
-    fn generate_output_parms() -> (PrivateKey, PrivateKey, OutputFeatures) {
-        let r = PrivateKey::random(&mut OsRng);
-        let k = PrivateKey::random(&mut OsRng);
-        let of = OutputFeatures::default();
-        (r, k, of)
-    }
 
     #[tokio::test]
     async fn zero_amount_fails() {
@@ -175,7 +166,6 @@ mod test {
     #[tokio::test]
     async fn valid_request() {
         let key_manager = create_test_core_key_manager_with_memory_db();
-        let factories = CryptoFactories::default();
         let m = TransactionMetadata::new(MicroTari(100), 0);
         let test_params = TestParams::new(&key_manager).await;
         let test_params2 = TestParams::new(&key_manager).await;

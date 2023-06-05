@@ -352,10 +352,7 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
 
 #[cfg(test)]
 mod test {
-    use rand::rngs::OsRng;
     use tari_common::configuration::Network;
-    use tari_common_types::types::PrivateKey;
-    use tari_crypto::keys::SecretKey as SecretKeyTrait;
 
     use crate::{
         consensus::{emission::Emission, ConsensusManager, ConsensusManagerBuilder},
@@ -366,7 +363,6 @@ mod test {
             tari_amount::uT,
             test_helpers::TestParams,
             transaction_components::{KernelFeatures, OutputFeatures, OutputType, TransactionError, TransactionKernel},
-            transaction_protocol::RecoveryData,
             CoinbaseBuilder,
         },
         validation::aggregate_body::AggregateBodyInternalConsistencyValidator,
@@ -414,8 +410,7 @@ mod test {
     #[tokio::test]
     #[allow(clippy::erasing_op)]
     async fn missing_spend_key() {
-        let (builder, rules, _, key_manager) = get_builder();
-        let p = TestParams::new(&key_manager).await;
+        let (builder, rules, _, _key_manager) = get_builder();
         let fees = 0 * uT;
         let builder = builder.with_block_height(42).with_fees(fees);
         assert_eq!(

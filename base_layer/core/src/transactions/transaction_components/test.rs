@@ -21,7 +21,7 @@
 //  USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 use rand::{self, rngs::OsRng};
-use tari_common_types::types::{ComAndPubSignature, CommitmentFactory, PrivateKey, PublicKey, Signature};
+use tari_common_types::types::{ComAndPubSignature, PrivateKey, PublicKey, Signature};
 use tari_crypto::{
     commitment::HomomorphicCommitmentFactory,
     keys::SecretKey as SecretKeyTrait,
@@ -53,7 +53,6 @@ use crate::{
 async fn input_and_output_and_key_manager_output_hash_match() {
     let key_manager = create_test_core_key_manager_with_memory_db();
     let test_params = TestParams::new(&key_manager).await;
-    let factory = CommitmentFactory::default();
 
     let i = test_params
         .create_output(Default::default(), &key_manager)
@@ -69,7 +68,6 @@ async fn input_and_output_and_key_manager_output_hash_match() {
 async fn key_manager_input() {
     let key_manager = create_test_core_key_manager_with_memory_db();
     let test_params = TestParams::new(&key_manager).await;
-    let factory = CommitmentFactory::default();
 
     let i = test_params
         .create_output(Default::default(), &key_manager)
@@ -238,7 +236,6 @@ async fn range_proof_verification_batch() {
 async fn sender_signature_verification() {
     let key_manager = create_test_core_key_manager_with_memory_db();
     let test_params = TestParams::new(&key_manager).await;
-    let factories = CryptoFactories::new(32);
     let key_manager_output = test_params
         .create_output(Default::default(), &key_manager)
         .await
@@ -480,9 +477,7 @@ async fn inputs_not_malleable() {
 async fn test_output_recover_openings() {
     let key_manager = create_test_core_key_manager_with_memory_db();
     let test_params = TestParams::new(&key_manager).await;
-    let factories = CryptoFactories::new(32);
     let v = MicroTari::from(42);
-    let random_key = PrivateKey::random(&mut OsRng);
 
     let key_manager_output = test_params
         .create_output(

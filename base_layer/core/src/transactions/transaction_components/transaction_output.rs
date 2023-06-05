@@ -420,6 +420,21 @@ impl TransactionOutput {
         }
     }
 
+    /// Convenience function to get the entire metadata signature message for the challenge. This contains all data
+    /// outside of the signing keys and nonces.
+    pub fn metadata_signature_message(key_manager_output: &KeyManagerOutput) -> [u8; 32] {
+        let common = DomainSeparatedConsensusHasher::<TransactionHashDomain>::new("metadata_message")
+            .chain(&key_manager_output.version)
+            .chain(&key_manager_output.script)
+            .chain(&key_manager_output.features)
+            .chain(&key_manager_output.covenant)
+            .chain(&key_manager_output.encrypted_data)
+            .chain(&key_manager_output.minimum_value_promise);
+        match key_manager_output.version {
+            TransactionOutputVersion::V0 | TransactionOutputVersion::V1 => common.finalize(),
+        }
+    }
+
     /// Convenience function to create the entire metadata signature message for the challenge. This contains all data
     /// outside of the signing keys and nonces.
     pub fn build_metadata_signature_message(
@@ -563,23 +578,13 @@ impl TransactionOutput {
             &key_manager_output.encrypted_data,
             key_manager_output.minimum_value_promise,
         );
-        let ephemeral_commitment_nonce_id = key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await?;
         let ephemeral_pubkey_nonce_id = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
         let ephemeral_pubkey = key_manager.get_public_key_at_key_id(&ephemeral_pubkey_nonce_id).await?;
-        let ephemeral_commitment = key_manager
-            .get_metadata_signature_ephemeral_commitment(
-                &ephemeral_commitment_nonce_id,
-                key_manager_output.features.range_proof_type,
-            )
+        let ephemeral_commitment_nonce_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
-        let commitment = key_manager
-            .get_commitment(&key_manager_output.spending_key_id, &key_manager_output.value.into())
-            .await?;
-
         let receiver_metadata_signature = key_manager
             .get_receiver_partial_metadata_signature(
                 &key_manager_output.spending_key_id,
@@ -589,6 +594,15 @@ impl TransactionOutput {
                 &ephemeral_pubkey,
                 &key_manager_output.version,
                 &metadata_message,
+                key_manager_output.features.range_proof_type,
+            )
+            .await?;
+        let commitment = key_manager
+            .get_commitment(&key_manager_output.spending_key_id, &key_manager_output.value.into())
+            .await?;
+        let ephemeral_commitment = key_manager
+            .get_metadata_signature_ephemeral_commitment(
+                &ephemeral_commitment_nonce_id,
                 key_manager_output.features.range_proof_type,
             )
             .await?;
@@ -620,7 +634,7 @@ impl TransactionOutput {
             &key_manager_output.encrypted_data,
             key_manager_output.minimum_value_promise,
         );
-        let ephemeral_commitment_nonce = match ephemeral_commitment_nonce_id {
+        let nonce_id = match ephemeral_commitment_nonce_id {
             Some(id) => id.clone(),
             None => {
                 key_manager
@@ -632,7 +646,7 @@ impl TransactionOutput {
             .get_receiver_partial_metadata_signature(
                 &key_manager_output.spending_key_id,
                 &key_manager_output.value.into(),
-                &ephemeral_commitment_nonce,
+                &nonce_id,
                 &key_manager_output.sender_offset_public_key,
                 &ephemeral_pubkey,
                 &key_manager_output.version,
@@ -898,7 +912,6 @@ mod test {
         let minimum_value_promise = MicroTari(11);
         let tx_output = create_invalid_output(
             &test_params,
-            &factories,
             value,
             minimum_value_promise,
             RangeProofType::BulletProofPlus,
@@ -999,7 +1012,6 @@ mod test {
     #[tokio::test]
     async fn invalid_revealed_value_proofs_are_blocked() {
         let key_manager = create_test_core_key_manager_with_memory_db();
-        let factories = CryptoFactories::default();
         let test_params = TestParams::new(&key_manager).await;
         assert!(create_output(
             &test_params,
@@ -1026,7 +1038,6 @@ mod test {
 
     #[tokio::test]
     async fn revealed_value_proofs_only_succeed_with_valid_metadata_signatures() {
-        let factories = CryptoFactories::default();
         let key_manager = create_test_core_key_manager_with_memory_db();
         let test_params = TestParams::new(&key_manager).await;
         let mut output = create_output(
@@ -1070,7 +1081,6 @@ mod test {
             .unwrap(),
             &create_invalid_output(
                 &test_params,
-                &factories,
                 MicroTari(10),
                 MicroTari(11),
                 RangeProofType::BulletProofPlus,
@@ -1111,7 +1121,6 @@ mod test {
 
     async fn create_invalid_output(
         test_params: &TestParams,
-        factories: &CryptoFactories,
         value: MicroTari,
         minimum_value_promise: MicroTari,
         range_proof_type: RangeProofType,

@@ -653,7 +653,6 @@ mod test {
             tari_amount::MicroTari,
             test_helpers::{TestParams, UtxoTestParams},
             weight::TransactionWeight,
-            CryptoFactories,
             SenderTransactionProtocol,
         },
         tx,
@@ -748,7 +747,6 @@ mod test {
             );
 
         // Double spend the input from tx2 in tx3
-        let double_spend_utxo = tx2.body.inputs().first().unwrap().clone();
         let double_spend_input = inputs.first().unwrap().clone();
 
         let estimated_fee = Fee::new(TransactionWeight::latest()).calculate(
@@ -777,7 +775,6 @@ mod test {
             .await
             .unwrap();
 
-        let factories = CryptoFactories::default();
         let mut stx_protocol = stx_builder.build().await.unwrap();
         stx_protocol.finalize(&key_manager).await.unwrap();
 
