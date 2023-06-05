@@ -892,7 +892,7 @@ pub async fn create_stx_protocol(
 pub async fn create_coinbase_kernel(
     spending_key_id: &KeyId<PublicKey>,
     key_manager: &TestKeyManager,
-) -> (TransactionKernel, PrivateKey) {
+) -> TransactionKernel {
     let kernel_version = TransactionKernelVersion::get_current_version();
     let kernel_message = TransactionKernel::build_kernel_signature_message(
         &kernel_version,
@@ -916,22 +916,18 @@ pub async fn create_coinbase_kernel(
             &public_spend_key,
             &kernel_version,
             &kernel_message,
+            true
         )
         .await
         .unwrap();
-    let offset = key_manager
-        .get_partial_private_kernel_offset(&spending_key_id, &public_nonce_id)
-        .await
-        .unwrap();
-    (
+
         KernelBuilder::new()
             .with_features(KernelFeatures::COINBASE_KERNEL)
             .with_excess(&Commitment::from_public_key(&public_spend_key))
             .with_signature(&kernel_signature)
             .build()
-            .unwrap(),
-        offset,
-    )
+            .unwrap()
+
 }
 
 /// Create a transaction kernel with the given fee, using random keys to generate the signature

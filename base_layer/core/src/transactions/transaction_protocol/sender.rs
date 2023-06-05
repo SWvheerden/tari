@@ -596,6 +596,7 @@ impl SenderTransactionProtocol {
                         &total_public_excess,
                         &TransactionKernelVersion::get_current_version(),
                         &kernel_message,
+                        false
                     )
                     .await?;
             offset = offset +
@@ -616,6 +617,7 @@ impl SenderTransactionProtocol {
                         &total_public_excess,
                         &TransactionKernelVersion::get_current_version(),
                         &kernel_message,
+                        false,
                     )
                     .await?;
             offset = offset +

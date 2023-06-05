@@ -397,7 +397,6 @@ async fn test_sync_utxos_by_block() {
     let mut streaming = service.sync_utxos_by_block(req).await.unwrap().into_inner();
 
     let responses = convert_mpsc_to_stream(&mut streaming).collect::<Vec<_>>().await;
-    // dbg!(&block0);
     assert_eq!(
         vec![
             (0, block0.header().hash().to_vec(), 0),

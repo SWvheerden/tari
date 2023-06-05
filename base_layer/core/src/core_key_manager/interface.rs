@@ -123,6 +123,7 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
         total_excess: &PublicKey,
         kernel_version: &TransactionKernelVersion,
         kernel_message: &[u8; 32],
+        coinbase: bool,
     ) -> Result<Signature, TransactionError>;
 
     async fn get_partial_kernel_signature_excess(

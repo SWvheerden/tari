@@ -316,8 +316,6 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         private_key: &KeyId<PublicKey>,
         value: &PrivateKey,
     ) -> Result<Commitment, KeyManagerServiceError> {
-        dbg!(value);
-        dbg!(&private_key);
         let key = self.get_private_key(private_key).await?;
         Ok(self.crypto_factories.commitment.commit(&key, value))
     }
@@ -512,7 +510,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         let (nonce_a, nonce_b) = self
             .get_metadata_signature_ephemeral_private_key_pair(nonce_id, range_proof_type)
             .await?;
-        Ok(self.crypto_factories.commitment.commit(&nonce_a, &nonce_b))
+        Ok(self.crypto_factories.commitment.commit(&nonce_b, &nonce_a))
     }
 
     pub async fn get_metadata_signature(
@@ -552,7 +550,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         let (nonce_a, nonce_b) = self
             .get_metadata_signature_ephemeral_private_key_pair(nonce_id, range_proof_type)
             .await?;
-        let ephemeral_commitment = self.crypto_factories.commitment.commit(&nonce_a, &nonce_b);
+        let ephemeral_commitment = self.crypto_factories.commitment.commit(&nonce_b, &nonce_a);
         let spend_private_key = self.get_private_key(spend_key_id).await?;
         let commitment = self.crypto_factories.commitment.commit(&spend_private_key, value);
         let challenge = TransactionOutput::finalize_metadata_signature_challenge(
@@ -642,11 +640,14 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         total_excess: &PublicKey,
         kernel_version: &TransactionKernelVersion,
         kernel_message: &[u8; 32],
+        coinbase: bool,
     ) -> Result<Signature, TransactionError> {
         let spending_private_key = self.get_private_key(spending_key).await?;
         let private_nonce = self.get_private_key(nonce_id).await?;
-        let signing_key =
-            spending_private_key - &self.get_partial_private_kernel_offset(spending_key, nonce_id).await?;
+        let signing_key = match coinbase{
+            true => spending_private_key,
+            false => spending_private_key - &self.get_partial_private_kernel_offset(spending_key, nonce_id).await?
+        };
         let challenge = TransactionKernel::finalize_kernel_signature_challenge(
             kernel_version,
             total_nonce,

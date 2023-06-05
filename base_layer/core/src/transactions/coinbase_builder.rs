@@ -224,22 +224,14 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
                 &public_nonce,
                 &public_spend_key,
                 &kernel_version,
-                &kernel_message,
+                &kernel_message, true
             )
             .await?;
-        let offset = self
-            .key_manager
-            .get_partial_private_kernel_offset(&spending_key_id, &public_nonce_id)
-            .await?;
         let excess_public_key = self
-            .key_manager
-            .get_partial_kernel_signature_excess(&spending_key_id, &public_nonce_id)
-            .await?;
+            .key_manager.get_public_key_at_key_id(&spending_key_id).await?;
         let excess = Commitment::from_public_key(&excess_public_key);
         // generate tx details
         let value: u64 = total_reward.into();
-        dbg!(&spending_key_id);
-        dbg!(&value);
         let commitment = self.key_manager.get_commitment(&spending_key_id, &value.into()).await?;
         let output_features = OutputFeatures::create_coinbase(height + constants.coinbase_lock_height(), self.extra);
         let encrypted_data = self
@@ -316,8 +308,8 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
             .await?;
 
         let metadata_sig = &receiver_metadata_signature + &sender_metadata_signature;
-
-        let key_manager_output = KeyManagerOutput::new_current_version(
+        let key_manager_output = KeyManagerOutput::new(
+            output_version,
             total_reward,
             spending_key_id,
             output_features,
@@ -331,8 +323,6 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
             encrypted_data,
             minimum_value_promise,
         );
-        dbg!(&key_manager_output.spending_key_id);
-        dbg!(&key_manager_output.value);
         let output = key_manager_output
             .as_transaction_output(&self.key_manager)
             .await
@@ -349,7 +339,7 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
         let mut builder = TransactionBuilder::new();
         builder
             .add_output(output)
-            .add_offset(offset)
+            .add_offset(PrivateKey::default())
             .add_script_offset(PrivateKey::default())
             .with_reward(total_reward)
             .with_kernel(kernel);
@@ -382,17 +372,17 @@ mod test {
         validation::aggregate_body::AggregateBodyInternalConsistencyValidator,
     };
 
-    fn get_builder() -> (CoinbaseBuilder<TestKeyManager>, ConsensusManager, CryptoFactories) {
+    fn get_builder() -> (CoinbaseBuilder<TestKeyManager>, ConsensusManager, CryptoFactories, TestKeyManager) {
         let network = Network::LocalNet;
         let rules = ConsensusManagerBuilder::new(network).build();
         let key_manager = create_test_core_key_manager_with_memory_db();
         let factories = CryptoFactories::default();
-        (CoinbaseBuilder::new(key_manager), rules, factories)
+        (CoinbaseBuilder::new(key_manager.clone()), rules, factories, key_manager)
     }
 
     #[tokio::test]
     async fn missing_height() {
-        let (builder, rules, _) = get_builder();
+        let (builder, rules, _, _) = get_builder();
 
         assert_eq!(
             builder
@@ -405,7 +395,7 @@ mod test {
 
     #[tokio::test]
     async fn missing_fees() {
-        let (builder, rules, _) = get_builder();
+        let (builder, rules, _, _) = get_builder();
         let builder = builder.with_block_height(42);
         assert_eq!(
             builder
@@ -419,9 +409,8 @@ mod test {
     #[tokio::test]
     #[allow(clippy::erasing_op)]
     async fn missing_spend_key() {
-        let key_manager = create_test_core_key_manager_with_memory_db();
+        let (builder, rules, _,key_manager) = get_builder();
         let p = TestParams::new(&key_manager).await;
-        let (builder, rules, _) = get_builder();
         let fees = 0 * uT;
         let builder = builder.with_block_height(42).with_fees(fees);
         assert_eq!(
@@ -435,9 +424,8 @@ mod test {
 
     #[tokio::test]
     async fn valid_coinbase() {
-        let key_manager = create_test_core_key_manager_with_memory_db();
+        let (builder, rules, factories, key_manager) = get_builder();
         let p = TestParams::new(&key_manager).await;
-        let (builder, rules, factories) = get_builder();
         let builder = builder
             .with_block_height(42)
             .with_fees(145 * uT)
@@ -449,8 +437,6 @@ mod test {
             .unwrap();
         let utxo = &tx.body.outputs()[0];
         let block_reward = rules.emission_schedule().block_reward(42) + 145 * uT;
-        dbg!(&block_reward);
-        dbg!(&p.spend_key);
 
         let commitment = key_manager
             .get_commitment(&p.spend_key, &block_reward.into())
@@ -467,13 +453,24 @@ mod test {
                 42,
             )
             .unwrap();
+
+        let body_validator = AggregateBodyInternalConsistencyValidator::new(false, rules, factories);
+        body_validator
+            .validate(
+                tx.body(),
+                &tx.offset,
+                &tx.script_offset,
+                Some(block_reward),
+                None,
+                u64::MAX,
+            )
+            .unwrap();
     }
 
     #[tokio::test]
     async fn invalid_coinbase_maturity() {
-        let key_manager = create_test_core_key_manager_with_memory_db();
+        let (builder, rules, factories, key_manager) = get_builder();
         let p = TestParams::new(&key_manager).await;
-        let (builder, rules, factories) = get_builder();
         let block_reward = rules.emission_schedule().block_reward(42) + 145 * uT;
         let builder = builder
             .with_block_height(42)
@@ -499,9 +496,8 @@ mod test {
     #[tokio::test]
     #[allow(clippy::identity_op)]
     async fn invalid_coinbase_value() {
-        let key_manager = create_test_core_key_manager_with_memory_db();
+        let (builder, rules, factories, key_manager) = get_builder();
         let p = TestParams::new(&key_manager).await;
-        let (builder, rules, factories) = get_builder();
         // We just want some small amount here.
         let missing_fee = rules.emission_schedule().block_reward(4200000) + (2 * uT);
         let builder = builder
@@ -552,12 +548,6 @@ mod test {
             .build(rules.consensus_constants(0), rules.emission_schedule())
             .await
             .unwrap();
-        dbg!(&tx3.body.check_coinbase_output(
-            block_reward,
-            rules.consensus_constants(0).coinbase_lock_height(),
-            &factories,
-            42
-        ));
         assert!(tx3
             .body
             .check_coinbase_output(
@@ -579,9 +569,8 @@ mod test {
     #[tokio::test]
     #[allow(clippy::identity_op)]
     async fn invalid_coinbase_amount() {
-        let key_manager = create_test_core_key_manager_with_memory_db();
+        let (builder, rules, factories, key_manager) = get_builder();
         let p = TestParams::new(&key_manager).await;
-        let (builder, rules, factories) = get_builder();
         // We just want some small amount here.
         let missing_fee = rules.emission_schedule().block_reward(4200000) + (2 * uT);
         let builder = builder
@@ -631,6 +620,7 @@ mod test {
                 &excess,
                 &TransactionKernelVersion::get_current_version(),
                 &kernel_message,
+                true
             )
             .await
             .unwrap();

@@ -78,6 +78,7 @@ impl SingleReceiverTransactionProtocol {
                 &(&sender_info.public_excess + &public_spending_key),
                 &TransactionKernelVersion::get_current_version(),
                 &kernel_message,
+                false
             )
             .await?;
         let offset = key_manager

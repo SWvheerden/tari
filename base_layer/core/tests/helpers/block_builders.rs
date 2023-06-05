@@ -105,6 +105,7 @@ pub async fn create_coinbase(
             &public_exess,
             &TransactionKernelVersion::get_current_version(),
             &kernel_message,
+            true,
         )
         .await
         .unwrap();
