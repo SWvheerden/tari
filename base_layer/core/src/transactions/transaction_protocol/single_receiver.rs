@@ -78,7 +78,7 @@ impl SingleReceiverTransactionProtocol {
                 &(&sender_info.public_excess + &public_spending_key),
                 &TransactionKernelVersion::get_current_version(),
                 &kernel_message,
-                false
+                false,
             )
             .await?;
         let offset = key_manager
@@ -232,7 +232,7 @@ mod test {
             &bob_output,
             &key_manager,
             None,
-            &ephemeral_public_nonce
+            &ephemeral_public_nonce,
         )
         .await
         .unwrap();

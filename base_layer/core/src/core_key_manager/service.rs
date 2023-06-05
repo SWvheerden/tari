@@ -644,9 +644,9 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     ) -> Result<Signature, TransactionError> {
         let spending_private_key = self.get_private_key(spending_key).await?;
         let private_nonce = self.get_private_key(nonce_id).await?;
-        let signing_key = match coinbase{
+        let signing_key = match coinbase {
             true => spending_private_key,
-            false => spending_private_key - &self.get_partial_private_kernel_offset(spending_key, nonce_id).await?
+            false => spending_private_key - &self.get_partial_private_kernel_offset(spending_key, nonce_id).await?,
         };
         let challenge = TransactionKernel::finalize_kernel_signature_challenge(
             kernel_version,

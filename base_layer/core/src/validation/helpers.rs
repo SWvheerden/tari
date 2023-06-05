@@ -524,8 +524,7 @@ mod test {
             let key_manager = create_test_core_key_manager_with_memory_db();
             let coinbase = block_on(test_helpers::create_key_manager_coinbase(&test_params, height, None));
             let coinbase_output = coinbase.as_transaction_output(&key_manager).await.unwrap();
-            let coinbase_kernel = test_helpers::create_coinbase_kernel(&coinbase.spending_key_id, &key_manager)
-                .await;
+            let coinbase_kernel = test_helpers::create_coinbase_kernel(&coinbase.spending_key_id, &key_manager).await;
 
             let body = AggregateBody::new(vec![], vec![coinbase_output], vec![coinbase_kernel]);
 
@@ -544,8 +543,7 @@ mod test {
             let mut coinbase = test_helpers::create_key_manager_coinbase(&test_params, height, None).await;
             coinbase.features.maturity = 0;
             let coinbase_output = coinbase.as_transaction_output(&key_manager).await.unwrap();
-            let coinbase_kernel = test_helpers::create_coinbase_kernel(&coinbase.spending_key_id, &key_manager)
-                .await;
+            let coinbase_kernel = test_helpers::create_coinbase_kernel(&coinbase.spending_key_id, &key_manager).await;
 
             let body = AggregateBody::new(vec![], vec![coinbase_output], vec![coinbase_kernel]);
 
@@ -567,8 +565,7 @@ mod test {
             let mut coinbase = test_helpers::create_key_manager_coinbase(&test_params, height, None).await;
             coinbase.value = 123.into();
             let coinbase_output = coinbase.as_transaction_output(&key_manager).await.unwrap();
-            let coinbase_kernel = test_helpers::create_coinbase_kernel(&coinbase.spending_key_id, &key_manager)
-                .await;
+            let coinbase_kernel = test_helpers::create_coinbase_kernel(&coinbase.spending_key_id, &key_manager).await;
 
             let body = AggregateBody::new(vec![], vec![coinbase_output], vec![coinbase_kernel]);
             let reward = rules.calculate_coinbase_and_fees(height, body.kernels());

@@ -443,50 +443,6 @@ impl TransactionOutput {
     }
 
     // Create partial commitment signature for the metadata for the receiver
-    pub async fn create_receiver_partial_metadata_signature_with_key_id<KM: BaseLayerKeyManagerInterface>(
-        key_manager: &KM,
-        version: TransactionOutputVersion,
-        value: MicroTari,
-        spending_key_id: &KeyId<PublicKey>,
-        script: &TariScript,
-        output_features: &OutputFeatures,
-        sender_offset_public_key: &PublicKey,
-        ephemeral_pubkey: &PublicKey,
-        covenant: &Covenant,
-        encrypted_data: &EncryptedData,
-        minimum_value_promise: MicroTari,
-    ) -> Result<ComAndPubSignature, TransactionError> {
-        let nonce_a = TransactionOutput::nonce_a(output_features.range_proof_type, value, minimum_value_promise)?;
-        let nonce_b = PrivateKey::random(&mut OsRng);
-        let ephemeral_commitment = CommitmentFactory::default().commit(&nonce_b, &nonce_a);
-        let pk_value = PrivateKey::from(value.as_u64());
-        let commitment = key_manager.get_commitment(spending_key_id, &pk_value).await?;
-        let e = TransactionOutput::build_metadata_signature_challenge(
-            &version,
-            script,
-            output_features,
-            sender_offset_public_key,
-            &ephemeral_commitment,
-            ephemeral_pubkey,
-            &commitment,
-            covenant,
-            encrypted_data,
-            minimum_value_promise,
-        );
-        key_manager
-            .get_metadata_signature(
-                &pk_value,
-                spending_key_id,
-                &PrivateKey::default(),
-                &nonce_a,
-                &nonce_b,
-                &PrivateKey::default(),
-                &e,
-            )
-            .await
-    }
-
-    // Create partial commitment signature for the metadata for the receiver
     // TODO: Remove this method when core key manager is fully implemented
     pub fn create_receiver_partial_metadata_signature(
         version: TransactionOutputVersion,
@@ -594,52 +550,6 @@ impl TransactionOutput {
         }
     }
 
-    // Create complete commitment signature if you are both the sender and receiver
-    pub async fn create_metadata_signature_with_key_id<KM: BaseLayerKeyManagerInterface>(
-        key_manager: &KM,
-        version: TransactionOutputVersion,
-        value: MicroTari,
-        spending_key_id: &KeyId<PublicKey>,
-        script: &TariScript,
-        output_features: &OutputFeatures,
-        sender_offset_private_key: &PrivateKey,
-        covenant: &Covenant,
-        encrypted_data: &EncryptedData,
-        minimum_value_promise: MicroTari,
-    ) -> Result<ComAndPubSignature, TransactionError> {
-        let nonce_a = TransactionOutput::nonce_a(output_features.range_proof_type, value, minimum_value_promise)?;
-        let nonce_b = PrivateKey::random(&mut OsRng);
-        let ephemeral_commitment = CommitmentFactory::default().commit(&nonce_b, &nonce_a);
-        let nonce_x = PrivateKey::random(&mut OsRng);
-        let ephemeral_pubkey = PublicKey::from_secret_key(&nonce_x);
-        let pk_value = PrivateKey::from(value.as_u64());
-        let commitment = key_manager.get_commitment(spending_key_id, &pk_value).await?;
-        let sender_offset_public_key = PublicKey::from_secret_key(sender_offset_private_key);
-        let e = TransactionOutput::build_metadata_signature_challenge(
-            &version,
-            script,
-            output_features,
-            &sender_offset_public_key,
-            &ephemeral_commitment,
-            &ephemeral_pubkey,
-            &commitment,
-            covenant,
-            encrypted_data,
-            minimum_value_promise,
-        );
-        key_manager
-            .get_metadata_signature(
-                &pk_value,
-                spending_key_id,
-                sender_offset_private_key,
-                &nonce_a,
-                &nonce_b,
-                &nonce_x,
-                &e,
-            )
-            .await
-    }
-
     pub async fn sign_metadata_signature_as_sender_receiver_with_key_id<KM: BaseLayerKeyManagerInterface>(
         key_manager_output: &KeyManagerOutput,
         key_manager: &KM,
@@ -731,6 +641,46 @@ impl TransactionOutput {
             )
             .await?;
         Ok(receiver_metadata_signature)
+    }
+
+    pub async fn sign_metadata_signature_as_sender_with_key_id<KM: BaseLayerKeyManagerInterface>(
+        key_manager_output: &KeyManagerOutput,
+        key_manager: &KM,
+        ephemeral_commitment_nonce: &Commitment,
+        ephemeral_pubkey_id: Option<&KeyId<PublicKey>>,
+        sender_offset_private_key_id: &KeyId<PublicKey>,
+    ) -> Result<ComAndPubSignature, TransactionError> {
+        let metadata_message = TransactionOutput::build_metadata_signature_message(
+            &key_manager_output.version,
+            &key_manager_output.script,
+            &key_manager_output.features,
+            &key_manager_output.covenant,
+            &key_manager_output.encrypted_data,
+            key_manager_output.minimum_value_promise,
+        );
+        let ephemeral_pubkey = match ephemeral_pubkey_id {
+            Some(id) => id.clone(),
+            None => {
+                key_manager
+                    .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+                    .await?
+            },
+        };
+        let commitment = key_manager
+            .get_commitment(&key_manager_output.spending_key_id, &key_manager_output.value.into())
+            .await?;
+        let sender_metadata_signature = key_manager
+            .get_sender_partial_metadata_signature(
+                &ephemeral_pubkey,
+                sender_offset_private_key_id,
+                &commitment,
+                &ephemeral_commitment_nonce,
+                &key_manager_output.version,
+                &metadata_message,
+            )
+            .await?;
+
+        Ok(sender_metadata_signature)
     }
 
     // Create complete commitment signature if you are both the sender and receiver

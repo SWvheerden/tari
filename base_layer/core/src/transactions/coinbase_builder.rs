@@ -224,11 +224,11 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
                 &public_nonce,
                 &public_spend_key,
                 &kernel_version,
-                &kernel_message, true
+                &kernel_message,
+                true,
             )
             .await?;
-        let excess_public_key = self
-            .key_manager.get_public_key_at_key_id(&spending_key_id).await?;
+        let excess_public_key = self.key_manager.get_public_key_at_key_id(&spending_key_id).await?;
         let excess = Commitment::from_public_key(&excess_public_key);
         // generate tx details
         let value: u64 = total_reward.into();
@@ -372,7 +372,12 @@ mod test {
         validation::aggregate_body::AggregateBodyInternalConsistencyValidator,
     };
 
-    fn get_builder() -> (CoinbaseBuilder<TestKeyManager>, ConsensusManager, CryptoFactories, TestKeyManager) {
+    fn get_builder() -> (
+        CoinbaseBuilder<TestKeyManager>,
+        ConsensusManager,
+        CryptoFactories,
+        TestKeyManager,
+    ) {
         let network = Network::LocalNet;
         let rules = ConsensusManagerBuilder::new(network).build();
         let key_manager = create_test_core_key_manager_with_memory_db();
@@ -409,7 +414,7 @@ mod test {
     #[tokio::test]
     #[allow(clippy::erasing_op)]
     async fn missing_spend_key() {
-        let (builder, rules, _,key_manager) = get_builder();
+        let (builder, rules, _, key_manager) = get_builder();
         let p = TestParams::new(&key_manager).await;
         let fees = 0 * uT;
         let builder = builder.with_block_height(42).with_fees(fees);
@@ -620,7 +625,7 @@ mod test {
                 &excess,
                 &TransactionKernelVersion::get_current_version(),
                 &kernel_message,
-                true
+                true,
             )
             .await
             .unwrap();

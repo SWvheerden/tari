@@ -1128,7 +1128,7 @@ async fn consensus_validation_large_tx() {
                 &pub_excess,
                 &kernel_version,
                 &kernel_message,
-                false
+                false,
             )
             .await
             .unwrap();

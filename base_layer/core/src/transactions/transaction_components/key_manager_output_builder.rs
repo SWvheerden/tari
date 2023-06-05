@@ -27,7 +27,7 @@ use tari_key_manager::key_manager_service::KeyId;
 use tari_script::{ExecutionStack, TariScript};
 
 use crate::{
-    core_key_manager::BaseLayerKeyManagerInterface,
+    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch},
     covenants::Covenant,
     transactions::{
         tari_amount::MicroTari,
@@ -150,33 +150,68 @@ impl KeyManagerOutputBuilder {
         &self.covenant
     }
 
-    pub async fn sign_as_sender_and_receiver<KM: BaseLayerKeyManagerInterface>(
-        &mut self,
+    pub async fn sign_as_sender_and_receiver_using_key_id<KM: BaseLayerKeyManagerInterface>(
+        mut self,
         key_manager: &KM,
-        sender_offset_private_key: &PrivateKey,
-    ) -> Result<(), TransactionError> {
+        sender_offset_private_key_id: &KeyId<PublicKey>,
+    ) -> Result<Self, TransactionError> {
         let script = self
             .script
             .as_ref()
             .ok_or_else(|| TransactionError::ValidationError("Cannot sign metadata without a script".to_string()))?;
-        let metadata_signature = TransactionOutput::create_metadata_signature_with_key_id(
-            key_manager,
-            TransactionOutputVersion::get_current_version(),
-            self.value,
-            &self.spending_key_id,
-            script,
+        let sender_offset_public_key = key_manager
+            .get_public_key_at_key_id(sender_offset_private_key_id)
+            .await?;
+        let metadata_message = TransactionOutput::build_metadata_signature_message(
+            &self.version,
+            &script,
             &self.features,
-            sender_offset_private_key,
             &self.covenant,
             &self.encrypted_data,
             self.minimum_value_promise,
-        )
-        .await?;
-        self.sender_offset_public_key = Some(PublicKey::from_secret_key(sender_offset_private_key));
+        );
+        let ephemeral_commitment_nonce_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await?;
+        let ephemeral_pubkey_nonce_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await?;
+        let ephemeral_pubkey = key_manager.get_public_key_at_key_id(&ephemeral_pubkey_nonce_id).await?;
+        let ephemeral_commitment = key_manager
+            .get_metadata_signature_ephemeral_commitment(&ephemeral_commitment_nonce_id, self.features.range_proof_type)
+            .await?;
+        let commitment = key_manager
+            .get_commitment(&self.spending_key_id, &self.value.into())
+            .await?;
+
+        let receiver_metadata_signature = key_manager
+            .get_receiver_partial_metadata_signature(
+                &self.spending_key_id,
+                &self.value.into(),
+                &ephemeral_commitment_nonce_id,
+                &sender_offset_public_key,
+                &ephemeral_pubkey,
+                &self.version,
+                &metadata_message,
+                self.features.range_proof_type,
+            )
+            .await?;
+        let sender_metadata_signature = key_manager
+            .get_sender_partial_metadata_signature(
+                &ephemeral_pubkey_nonce_id,
+                &sender_offset_private_key_id,
+                &commitment,
+                &ephemeral_commitment,
+                &self.version,
+                &metadata_message,
+            )
+            .await?;
+        let metadata_signature = &receiver_metadata_signature + &sender_metadata_signature;
         self.metadata_signature = Some(metadata_signature);
         self.metadata_signed_by_receiver = true;
         self.metadata_signed_by_sender = true;
-        Ok(())
+        self.sender_offset_public_key = Some(sender_offset_public_key);
+        Ok(self)
     }
 
     pub fn try_build(self) -> Result<KeyManagerOutput, TransactionError> {
@@ -218,6 +253,7 @@ impl KeyManagerOutputBuilder {
 mod test {
     use rand::rngs::OsRng;
     use tari_crypto::keys::SecretKey;
+    use tari_key_manager::key_manager_service::KeyManagerInterface;
 
     use super::*;
     use crate::{test_helpers::create_test_core_key_manager_with_memory_db, transactions::CryptoFactories};
@@ -230,14 +266,24 @@ mod test {
         let kmob = KeyManagerOutputBuilder::new(value, spending_key_id.clone());
         let kmob = kmob.with_script(TariScript::new(vec![]));
         assert!(kmob.clone().try_build().is_err());
-        let sender_offset_private_key = PrivateKey::random(&mut OsRng);
-        let kmob = kmob.with_sender_offset_public_key(PublicKey::from_secret_key(&sender_offset_private_key));
+        let sender_offset_private_key_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await
+            .unwrap();
+        let sender_offset_public_key = key_manager
+            .get_public_key_at_key_id(&sender_offset_private_key_id)
+            .await
+            .unwrap();
+        let kmob = kmob.with_sender_offset_public_key(sender_offset_public_key);
         assert!(kmob.clone().try_build().is_err());
         let kmob = kmob.with_input_data(ExecutionStack::new(vec![]));
         let kmob = kmob.with_script_private_key(script_key_id);
         let kmob = kmob.with_features(OutputFeatures::default());
-        let mut kmob = kmob.with_encrypted_data(&key_manager).await.unwrap();
-        kmob.sign_as_sender_and_receiver(&key_manager, &sender_offset_private_key)
+        let mut kmob = kmob
+            .with_encrypted_data(&key_manager)
+            .await
+            .unwrap()
+            .sign_as_sender_and_receiver_using_key_id(&key_manager, &sender_offset_private_key_id)
             .await
             .unwrap();
         match kmob.clone().try_build() {
@@ -271,50 +317,65 @@ mod test {
         let value = MicroTari(100);
         let kmob = KeyManagerOutputBuilder::new(value, spending_key_id.clone());
         let kmob = kmob.with_script(TariScript::new(vec![]));
-        let sender_offset_private_key = PrivateKey::random(&mut OsRng);
-        let kmob = kmob.with_sender_offset_public_key(PublicKey::from_secret_key(&sender_offset_private_key));
+        let sender_offset_private_key_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await
+            .unwrap();
+        let sender_offset_public_key = key_manager
+            .get_public_key_at_key_id(&sender_offset_private_key_id)
+            .await
+            .unwrap();
+        let kmob = kmob.with_sender_offset_public_key(sender_offset_public_key);
         let kmob = kmob.with_input_data(ExecutionStack::new(vec![]));
         let kmob = kmob.with_script_private_key(script_key_id);
         let kmob = kmob.with_features(OutputFeatures::default());
-        let mut kmob = kmob.with_encrypted_data(&key_manager).await.unwrap();
-        kmob.sign_as_sender_and_receiver(&key_manager, &sender_offset_private_key)
+        let mut kmob = kmob
+            .with_encrypted_data(&key_manager)
+            .await
+            .unwrap()
+            .sign_as_sender_and_receiver_using_key_id(&key_manager, &sender_offset_private_key_id)
             .await
             .unwrap();
         match kmob.clone().try_build() {
             Ok(val) => {
                 let mut output = val.as_transaction_output(&key_manager).await.unwrap();
                 assert!(output.verify_metadata_signature().is_ok());
-
                 // Now we can swap out the metadata signature for one built from partial sender and receiver signatures
-                let (ephemeral_private_nonce, sender_ephemeral_public_nonce) = PublicKey::random_keypair(&mut OsRng);
-                let receiver_metadata_signature =
-                    TransactionOutput::create_receiver_partial_metadata_signature_with_key_id(
-                        &key_manager,
-                        output.version,
-                        value,
-                        &spending_key_id,
-                        &output.script,
-                        &output.features,
-                        &output.sender_offset_public_key,
-                        &sender_ephemeral_public_nonce,
-                        &output.covenant,
-                        &output.encrypted_data,
-                        output.minimum_value_promise,
+                let ephemeral_commitment_nonce_id = key_manager
+                    .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+                    .await
+                    .unwrap();
+                let ephemeral_pubkey_id = key_manager
+                    .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+                    .await
+                    .unwrap();
+                let ephemeral_commitment_nonce = key_manager
+                    .get_metadata_signature_ephemeral_commitment(
+                        &ephemeral_commitment_nonce_id,
+                        val.features.range_proof_type,
                     )
                     .await
                     .unwrap();
-                let sender_metadata_signature = TransactionOutput::create_sender_partial_metadata_signature(
-                    output.version,
-                    &output.commitment,
-                    receiver_metadata_signature.ephemeral_commitment(),
-                    &output.script,
-                    &output.features,
-                    &sender_offset_private_key,
-                    Some(&ephemeral_private_nonce),
-                    &output.covenant,
-                    &output.encrypted_data,
-                    output.minimum_value_promise,
+                let ephemeral_pubkey = key_manager
+                    .get_public_key_at_key_id(&ephemeral_pubkey_id)
+                    .await
+                    .unwrap();
+                let receiver_metadata_signature = TransactionOutput::sign_metadata_signature_as_receiver_with_key_id(
+                    &val,
+                    &key_manager,
+                    Some(&ephemeral_commitment_nonce_id),
+                    &ephemeral_pubkey,
                 )
+                .await
+                .unwrap();
+                let sender_metadata_signature = TransactionOutput::sign_metadata_signature_as_sender_with_key_id(
+                    &val,
+                    &key_manager,
+                    &ephemeral_commitment_nonce,
+                    Some(&ephemeral_pubkey_id),
+                    &sender_offset_private_key_id,
+                )
+                .await
                 .unwrap();
                 let metadata_signature_from_partials = &receiver_metadata_signature + &sender_metadata_signature;
                 assert_ne!(output.metadata_signature, metadata_signature_from_partials);

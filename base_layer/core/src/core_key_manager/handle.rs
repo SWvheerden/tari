@@ -301,7 +301,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         total_excess: &PublicKey,
         kernel_version: &TransactionKernelVersion,
         kernel_message: &[u8; 32],
-        coinbase: bool
+        coinbase: bool,
     ) -> Result<Signature, TransactionError> {
         (*self.core_key_manager_inner)
             .read()
@@ -313,7 +313,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
                 total_excess,
                 kernel_version,
                 kernel_message,
-                coinbase
+                coinbase,
             )
             .await
     }

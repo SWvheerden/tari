@@ -203,15 +203,11 @@ impl TestParams {
             .with_sender_offset_public_key(sender_offset_public_key)
             .with_script_private_key(self.script_private_key.clone())
             .with_minimum_value_promise(params.minimum_value_promise)
+            .sign_as_sender_and_receiver_using_key_id(key_manager, &self.sender_offset_private_key)
+            .await
+            .unwrap()
             .try_build()
             .unwrap();
-        output.metadata_signature = TransactionOutput::sign_metadata_signature_as_sender_receiver_with_key_id(
-            &output,
-            key_manager,
-            &self.sender_offset_private_key,
-        )
-        .await
-        .unwrap();
 
         Ok(output)
     }
@@ -916,18 +912,17 @@ pub async fn create_coinbase_kernel(
             &public_spend_key,
             &kernel_version,
             &kernel_message,
-            true
+            true,
         )
         .await
         .unwrap();
 
-        KernelBuilder::new()
-            .with_features(KernelFeatures::COINBASE_KERNEL)
-            .with_excess(&Commitment::from_public_key(&public_spend_key))
-            .with_signature(&kernel_signature)
-            .build()
-            .unwrap()
-
+    KernelBuilder::new()
+        .with_features(KernelFeatures::COINBASE_KERNEL)
+        .with_excess(&Commitment::from_public_key(&public_spend_key))
+        .with_signature(&kernel_signature)
+        .build()
+        .unwrap()
 }
 
 /// Create a transaction kernel with the given fee, using random keys to generate the signature
