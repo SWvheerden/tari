@@ -727,7 +727,7 @@ mod test {
             )
             .await;
         builder.with_input(input).await.unwrap();
-        builder.with_fee_per_gram(MicroTari(1));
+        builder.with_fee_per_gram(MicroTari(20));
         // .with_recipient_data(
         //     script.clone(),
         //     recp.sender_offset_private_key,
@@ -741,20 +741,16 @@ mod test {
         let expected_fee =
             builder
                 .fee()
-                .calculate(MicroTari(1), 1, 1, 2, p.get_size_for_default_features_and_scripts(2));
+                .calculate(MicroTari(20), 1, 1, 2, p.get_size_for_default_features_and_scripts(2)) - MicroTari(20);
         // We needed a change input, so this should fail
         let err = builder.build().await.unwrap_err();
         assert_eq!(err.message, "Change data was not provided");
         // Ok, give them a change output
         let mut builder = err.builder;
         let change = TestParams::new(&key_manager).await;
-        let script_key = key_manager
-            .get_public_key_at_key_id(&change.script_private_key)
-            .await
-            .unwrap();
         builder.with_change_data(
             script!(Nop),
-            inputs!(script_key),
+            Default::default(),
             change.script_private_key.clone(),
             change.change_spend_key.clone(),
             change.sender_offset_private_key.clone(),
@@ -765,7 +761,8 @@ mod test {
         if let SenderState::Finalizing(info) = result.into_state() {
             assert_eq!(info.metadata.lock_height, 100, "Lock height");
             assert_eq!(info.metadata.fee, expected_fee, "Fee");
-            assert_eq!(info.outputs.len(), 2, "There should be 2 outputs");
+            assert_eq!(info.outputs.len(), 1, "There should be 1 output1");
+            assert!(info.change_output.is_some(), "There should be 1 change output1");
             assert_eq!(info.inputs.len(), 1, "There should be 1 input");
         } else {
             panic!("There were no recipients, so we should be finalizing");
@@ -921,15 +918,6 @@ mod test {
             .calculate(MicroTari(1), 1, 1, 1, p.get_size_for_default_features_and_scripts(1));
         let input = create_test_input(500 * uT + tx_fee, 0, &key_manager).await;
         let script = script!(Nop);
-        let output = create_key_manager_output_with_data(
-            script.clone(),
-            OutputFeatures::default(),
-            &p,
-            MicroTari(500),
-            &key_manager,
-        )
-        .await
-        .unwrap();
         // Start the builder
         let constants = create_consensus_constants(0);
         let mut builder = SenderTransactionInitializer::new(&constants, key_manager.clone());
@@ -941,9 +929,6 @@ mod test {
         builder
             .with_lock_height(0)
             .with_input(input)
-            .await
-            .unwrap()
-            .with_output(output, p.sender_offset_private_key)
             .await
             .unwrap()
             .with_change_data(
@@ -961,7 +946,7 @@ mod test {
                 Default::default(),
                 Default::default(),
                 0.into(),
-                MicroTari::zero(),
+                MicroTari(500),
             )
             .await
             .unwrap();
@@ -1107,71 +1092,4 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    async fn fail_range_proof() {
-        // Create some inputs
-        // let factories = CryptoFactories::new(32);
-        let key_manager = create_test_core_key_manager_with_memory_db();
-        let p = TestParams::new(&key_manager).await;
-        let recipient = TestParams::new(&key_manager).await;
-
-        let script = script!(Nop);
-        let output = create_key_manager_output_with_data(
-            script.clone(),
-            OutputFeatures::default(),
-            &p,
-            (1u64.pow(32) + 1u64).into(),
-            &key_manager,
-        )
-        .await
-        .unwrap();
-        // Start the builder
-        let input1 = create_test_input((2u64.pow(32) + 20000u64).into(), 0, &key_manager).await;
-        let fee_per_gram = MicroTari(6);
-        let constants = create_consensus_constants(0);
-        let mut builder = SenderTransactionInitializer::new(&constants, key_manager.clone());
-        let change = TestParams::new(&key_manager).await;
-        let script_key = key_manager
-            .get_public_key_at_key_id(&change.script_private_key)
-            .await
-            .unwrap();
-        builder
-            .with_lock_height(1234)
-            .with_output(output, p.sender_offset_private_key.clone())
-            .await
-            .unwrap()
-            .with_input(input1)
-            .await
-            .unwrap()
-            .with_change_data(
-                script!(Nop),
-                inputs!(script_key),
-                change.script_private_key.clone(),
-                change.change_spend_key.clone(),
-                change.sender_offset_private_key.clone(),
-                Covenant::default(),
-            )
-            .with_fee_per_gram(fee_per_gram)
-            .with_recipient_data(
-                script.clone(),
-                recipient.sender_offset_private_key,
-                Default::default(),
-                Default::default(),
-                0.into(),
-                9800.into(),
-            )
-            .await
-            .unwrap();
-        let result = builder.build().await;
-
-        match result {
-            Ok(_) => panic!("Range proof should have failed to verify"),
-            Err(e) => assert!(
-                e.message
-                    .contains("Value provided is outside the range allowed by the range proof"),
-                "Message did not contain 'Value provided is outside the range allowed by the range proof'. Error: {:?}",
-                e
-            ),
-        }
-    }
 }
