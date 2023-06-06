@@ -663,19 +663,21 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         kernel_features: &KernelFeatures,
         txo_type: TxoType,
     ) -> Result<Signature, TransactionError> {
-        let spending_private_key = if txo_type == TxoType::Output {
-            self.get_private_key(spending_key).await?
-        } else {
-            PrivateKey::default() - self.get_private_key(spending_key).await?
-        };
+        let private_key = self.get_private_key(spending_key).await?;
         // we cannot use an offset with a coinbase tx as this will not allow us to check the coinbase commitment
-        let signing_key = if kernel_features.is_coinbase() {
-            spending_private_key
+        let private_signing_key = if kernel_features.is_coinbase() {
+            private_key
         } else {
-            spending_private_key - &self.get_partial_private_kernel_offset(spending_key, nonce_id).await?
+            private_key - &self.get_partial_private_kernel_offset(spending_key, nonce_id).await?
         };
-        let private_nonce = self.get_private_key(nonce_id).await?;
 
+        let final_signing_key = if txo_type == TxoType::Output {
+            private_signing_key
+        } else {
+            PrivateKey::default() - &private_signing_key
+        };
+
+        let private_nonce = self.get_private_key(nonce_id).await?;
         let challenge = TransactionKernel::finalize_kernel_signature_challenge(
             kernel_version,
             total_nonce,
@@ -683,7 +685,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             kernel_message,
         );
 
-        let signature = Signature::sign_raw(&signing_key, private_nonce, &challenge)?;
+        let signature = Signature::sign_raw(&final_signing_key, private_nonce, &challenge)?;
         Ok(signature)
     }
 

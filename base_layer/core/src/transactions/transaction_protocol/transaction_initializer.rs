@@ -356,8 +356,10 @@ where KM: BaseLayerKeyManagerInterface
                     Some(v) => {
                         let change_data = self.change.as_ref().ok_or("Change data was not provided")?;
                         let change_script = change_data.change_script.clone();
+                        let change_script_key_id = change_data.change_script_key_id.clone();
                         let change_key_id = change_data.change_secret_key_id.clone();
                         let sender_offset_key_id = change_data.change_sender_offset_key_id.clone();
+                        let input_data = change_data.change_input_data.clone();
 
                         let covenant = self
                             .change
@@ -423,7 +425,7 @@ where KM: BaseLayerKeyManagerInterface
                                 &v.into(),
                                 &ephemeral_commitment_nonce,
                                 &ephemeral_pubkey_nonce,
-                                &change_key_id,
+                                &sender_offset_key_id,
                                 &ephemeral_pubkey,
                                 &ephemeral_commitment,
                                 &output_version,
@@ -438,16 +440,8 @@ where KM: BaseLayerKeyManagerInterface
                             change_key_id.clone(),
                             output_features,
                             change_script,
-                            self.change
-                                .as_ref()
-                                .ok_or("Change script was not provided")?
-                                .change_input_data
-                                .clone(),
-                            self.change
-                                .as_ref()
-                                .ok_or("Change script private key was not provided")?
-                                .change_script_key_id
-                                .clone(),
+                            input_data,
+                            change_script_key_id,
                             sender_offset_public_key.clone(),
                             metadata_sig,
                             0,
@@ -741,7 +735,8 @@ mod test {
         let expected_fee =
             builder
                 .fee()
-                .calculate(MicroTari(20), 1, 1, 2, p.get_size_for_default_features_and_scripts(2)) - MicroTari(20);
+                .calculate(MicroTari(20), 1, 1, 2, p.get_size_for_default_features_and_scripts(2)) -
+                MicroTari(20);
         // We needed a change input, so this should fail
         let err = builder.build().await.unwrap_err();
         assert_eq!(err.message, "Change data was not provided");
@@ -1091,5 +1086,4 @@ mod test {
             panic!("There was a recipient, we should be ready to send a message");
         }
     }
-
 }

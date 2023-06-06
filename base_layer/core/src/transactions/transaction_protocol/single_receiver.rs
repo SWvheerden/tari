@@ -88,7 +88,6 @@ impl SingleReceiverTransactionProtocol {
             .get_partial_private_kernel_offset(&output.spending_key_id, &nonce_id)
             .await?;
 
-
         let data = RecipientSignedMessage {
             tx_id: sender_info.tx_id,
             output: transaction_output,

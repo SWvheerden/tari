@@ -380,37 +380,42 @@ impl SenderTransactionProtocol {
                 let mut public_excess = PublicKey::default();
 
                 for input in &info.inputs {
-                    dbg!("input calcu");
                     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&input.kernel_nonce).await?;
                     public_excess = public_excess -
                         key_manager
-                            .get_partial_kernel_signature_excess_with_offset(&input.output.spending_key_id, &input.kernel_nonce)
+                            .get_partial_kernel_signature_excess_with_offset(
+                                &input.output.spending_key_id,
+                                &input.kernel_nonce,
+                            )
                             .await?;
                 }
                 for output in &info.outputs {
-                    dbg!("output calc");
                     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&output.kernel_nonce).await?;
                     public_excess = public_excess +
                         key_manager
-                            .get_partial_kernel_signature_excess_with_offset(&output.output.spending_key_id, &output.kernel_nonce)
+                            .get_partial_kernel_signature_excess_with_offset(
+                                &output.output.spending_key_id,
+                                &output.kernel_nonce,
+                            )
                             .await?;
                 }
 
-                // if let Some(change) = &info.change_output{
-                //     dbg!("here");
-                //     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&change.kernel_nonce).await?;
-                //     public_excess = public_excess +
-                //         key_manager
-                //             .get_partial_kernel_signature_excess_with_offset(&change.output.spending_key_id,
-                // &change.kernel_nonce)             .await?;
-                // }
+                if let Some(change) = &info.change_output {
+                    public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&change.kernel_nonce).await?;
+                    public_excess = public_excess +
+                        key_manager
+                            .get_partial_kernel_signature_excess_with_offset(
+                                &change.output.spending_key_id,
+                                &change.kernel_nonce,
+                            )
+                            .await?;
+                }
                 let sender_offset_public_key = key_manager
                     .get_public_key_at_key_id(&recipient_script_offset_secret_key_id)
                     .await?;
                 // we update this as we send this to what we sent.
                 info.total_sender_excess = public_excess.clone();
                 info.total_sender_nonce = public_nonce.clone();
-
 
                 let ephemeral_public_nonce = key_manager
                     .get_public_key_at_key_id(&ephemeral_public_key_nonce)
@@ -527,8 +532,8 @@ impl SenderTransactionProtocol {
             &info.metadata.kernel_features,
             &info.metadata.burn_commitment,
         );
+
         for input in &info.inputs {
-            dbg!("add input");
             tx_builder.add_input(input.output.as_transaction_input(key_manager).await?);
             signature = &signature +
                 &key_manager
@@ -548,6 +553,28 @@ impl SenderTransactionProtocol {
                     .get_partial_private_kernel_offset(&input.output.spending_key_id, &input.kernel_nonce)
                     .await?;
             script_keys.push(input.output.script_private_key_id.clone());
+            // let sig = key_manager
+            //     .get_partial_kernel_signature(
+            //         &input.output.spending_key_id,
+            //         &input.kernel_nonce,
+            //         &total_public_nonce,
+            //         &total_public_excess,
+            //         &TransactionKernelVersion::get_current_version(),
+            //         &kernel_message,
+            //         &info.metadata.kernel_features,
+            //         TxoType::Input,
+            //     )
+            //     .await?;
+            // let excess = PublicKey::default() -
+            // key_manager.get_partial_kernel_signature_excess_with_offset(&input.output.spending_key_id,&input.
+            // kernel_nonce ).await.unwrap(); // let excess =
+            // key_manager.get_partial_kernel_signature_excess_with_offset(&input.output.spending_key_id,&input.
+            // kernel_nonce ).await.unwrap(); let sig_challenge =
+            // TransactionKernel::finalize_kernel_signature_challenge(&TransactionKernelVersion::get_current_version(),
+            // &total_public_nonce, &total_public_excess, &kernel_message); assert!(sig.verify(&excess,
+            // &PrivateKey::from_bytes(&sig_challenge).unwrap()));
+            //
+            // assert!(false);
         }
 
         for output in &info.outputs {
@@ -578,34 +605,33 @@ impl SenderTransactionProtocol {
         }
 
         if let Some(recipient_data) = &info.recipient_data {
-            dbg!("recip");
             sender_offset_keys.push(recipient_data.recipient_sender_offset_key_id.clone());
         }
-        // if let Some(change) = &info.change_output{
-        //     dbg!("here2");
-        //     tx_builder.add_output(change.output.as_transaction_output(key_manager).await?);
-        //     signature = &signature +
-        //         &key_manager
-        //             .get_partial_kernel_signature(
-        //                 &change.output.spending_key_id,
-        //                 &change.kernel_nonce,
-        //                 &total_public_nonce,
-        //                 &total_public_excess,
-        //                 &TransactionKernelVersion::get_current_version(),
-        //                 &kernel_message,
-        //                 false,
-        //             )
-        //             .await?;
-        //     offset = offset +
-        //         &key_manager
-        //             .get_partial_private_kernel_offset(&change.output.spending_key_id, &change.kernel_nonce)
-        //             .await?;
-        //     let sender_offset_key_id = change
-        //         .sender_offset_key_id
-        //         .clone()
-        //         .ok_or(TPE::IncompleteStateError("Missing sender offset key id".to_string()))?;
-        //     sender_offset_keys.push(sender_offset_key_id);
-        // }
+        if let Some(change) = &info.change_output {
+            tx_builder.add_output(change.output.as_transaction_output(key_manager).await?);
+            signature = &signature +
+                &key_manager
+                    .get_partial_kernel_signature(
+                        &change.output.spending_key_id,
+                        &change.kernel_nonce,
+                        &total_public_nonce,
+                        &total_public_excess,
+                        &TransactionKernelVersion::get_current_version(),
+                        &kernel_message,
+                        &info.metadata.kernel_features,
+                        TxoType::Output,
+                    )
+                    .await?;
+            offset = offset +
+                &key_manager
+                    .get_partial_private_kernel_offset(&change.output.spending_key_id, &change.kernel_nonce)
+                    .await?;
+            let sender_offset_key_id = change
+                .sender_offset_key_id
+                .clone()
+                .ok_or(TPE::IncompleteStateError("Missing sender offset key id".to_string()))?;
+            sender_offset_keys.push(sender_offset_key_id);
+        }
 
         if let Some(received_output) = &info.recipient_output {
             tx_builder.add_output(received_output.clone());
@@ -1143,7 +1169,6 @@ mod test {
         assert!(bob_info.output.verify_metadata_signature().is_ok());
         assert_eq!(tx.body.outputs()[0], bob_info.output);
         let validator = TransactionInternalConsistencyValidator::new(false, rules, factories);
-        dbg!(&validator.validate(tx, None, None, u64::MAX));
         assert!(validator.validate(tx, None, None, u64::MAX).is_ok());
     }
 
@@ -1272,7 +1297,6 @@ mod test {
         assert_eq!(tx.body.inputs().len(), 1);
         // assert_eq!(tx.body.outputs().len(), 2);
         let validator = TransactionInternalConsistencyValidator::new(false, rules, factories);
-        dbg!(&validator.validate(tx, None, None, u64::MAX));
         assert!(validator.validate(tx, None, None, u64::MAX).is_ok());
     }
 
@@ -1446,20 +1470,20 @@ mod test {
     #[tokio::test]
     async fn single_recipient_with_rewindable_change_and_receiver_outputs_bulletproofs() {
         // Alice's parameters
-        let key_manager = create_test_core_key_manager_with_memory_db();
+        let key_manager_alice = create_test_core_key_manager_with_memory_db();
         let key_manager_bob = create_test_core_key_manager_with_memory_db();
-        let alice_test_params = TestParams::new(&key_manager).await;
+        let alice_test_params = TestParams::new(&key_manager_alice).await;
         // Bob's parameters
         let bob_test_params = TestParams::new(&key_manager_bob).await;
         let alice_value = MicroTari(25000);
-        let input = create_test_input(alice_value, 0, &key_manager).await;
+        let input = create_test_input(alice_value, 0, &key_manager_alice).await;
 
         let script = script!(Nop);
 
-        let mut builder = SenderTransactionProtocol::builder(create_consensus_constants(0), key_manager.clone());
-        let change = TestParams::new(&key_manager).await;
-        let script_key = key_manager
-            .get_public_key_at_key_id(&change.script_private_key)
+        let mut builder = SenderTransactionProtocol::builder(create_consensus_constants(0), key_manager_alice.clone());
+        let change_params = TestParams::new(&key_manager_alice).await;
+        let script_key = key_manager_alice
+            .get_public_key_at_key_id(&change_params.script_private_key)
             .await
             .unwrap();
         builder
@@ -1468,9 +1492,9 @@ mod test {
             .with_change_data(
                 script!(Nop),
                 inputs!(script_key),
-                change.script_private_key.clone(),
-                change.change_spend_key.clone(),
-                change.sender_offset_private_key.clone(),
+                change_params.script_private_key.clone(),
+                change_params.change_spend_key.clone(),
+                change_params.sender_offset_private_key.clone(),
                 Covenant::default(),
             )
             .with_input(input)
@@ -1488,7 +1512,7 @@ mod test {
             .unwrap();
         let mut alice = builder.build().await.unwrap();
         assert!(alice.is_single_round_message_ready());
-        let msg = alice.build_single_round_message(&key_manager).await.unwrap();
+        let msg = alice.build_single_round_message(&key_manager_alice).await.unwrap();
 
         let change = alice_value - msg.amount - msg.metadata.fee;
 
@@ -1504,7 +1528,7 @@ mod test {
         // Send message down the wire....and wait for response
         assert!(alice.is_collecting_single_signature());
 
-        let bob_public_key = key_manager
+        let bob_public_key = key_manager_alice
             .get_public_key_at_key_id(&alice_test_params.sender_offset_private_key)
             .await
             .unwrap();
@@ -1529,10 +1553,13 @@ mod test {
             .unwrap();
 
         // Alice gets message back, deserializes it, etc
-        alice.add_single_recipient_info(bob_info, &key_manager).await.unwrap();
+        alice
+            .add_single_recipient_info(bob_info, &key_manager_alice)
+            .await
+            .unwrap();
         // Transaction should be complete
         assert!(alice.is_finalizing());
-        match alice.finalize(&key_manager).await {
+        match alice.finalize(&key_manager_alice).await {
             Ok(_) => (),
             Err(e) => panic!("{:?}", e),
         };
@@ -1546,16 +1573,16 @@ mod test {
         let output_0 = &tx.body.outputs()[0];
         let output_1 = &tx.body.outputs()[1];
 
-        if let Ok((key, _value)) = key_manager
+        if let Ok((key, _value)) = key_manager_alice
             .try_commitment_key_recovery(&output_0.commitment, &output_0.encrypted_data, &None)
             .await
         {
-            assert_eq!(key, alice_test_params.spend_key);
-        } else if let Ok((key, _value)) = key_manager
+            assert_eq!(key, change_params.change_spend_key);
+        } else if let Ok((key, _value)) = key_manager_alice
             .try_commitment_key_recovery(&output_1.commitment, &output_1.encrypted_data, &None)
             .await
         {
-            assert_eq!(key, alice_test_params.spend_key);
+            assert_eq!(key, change_params.change_spend_key);
         } else {
             panic!("Could not recover Alice's output");
         }
