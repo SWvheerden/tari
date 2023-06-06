@@ -183,6 +183,8 @@ impl ReceiverTransactionProtocol {
 
 #[cfg(test)]
 mod test {
+    use tari_crypto::keys::PublicKey as PublicKeyTrait;
+    use tari_common_types::types::PublicKey;
     use tari_key_manager::key_manager_service::{KeyId, KeyManagerInterface};
     use tari_script::TariScript;
 
@@ -202,23 +204,25 @@ mod test {
             ReceiverTransactionProtocol,
         },
     };
+    use crate::transactions::test_helpers::UtxoTestParams;
 
     #[tokio::test]
     async fn single_round_recipient() {
         let key_manager = create_test_core_key_manager_with_memory_db();
         let factories = CryptoFactories::default();
-        let p = TestParams::new(&key_manager).await;
+        let receiver_test_params = TestParams::new(&key_manager).await;
+        let sender_test_params = TestParams::new(&key_manager).await;
         let m = TransactionMetadata::new(MicroTari(125), 0);
         let script = TariScript::default();
         let amount = MicroTari(500);
-        let public_excess = key_manager.get_public_key_at_key_id(&p.spend_key).await.unwrap();
-        let public_nonce = key_manager.get_public_key_at_key_id(&p.change_spend_key).await.unwrap();
+        let public_excess = key_manager.get_public_key_at_key_id(&sender_test_params.spend_key).await.unwrap();
+        let public_nonce = key_manager.get_public_key_at_key_id(&sender_test_params.change_spend_key).await.unwrap();
         let sender_offset_public_key = key_manager
-            .get_public_key_at_key_id(&p.sender_offset_private_key)
+            .get_public_key_at_key_id(&sender_test_params.sender_offset_private_key)
             .await
             .unwrap();
         let ephemeral_public_nonce = key_manager
-            .get_public_key_at_key_id(&p.ephemeral_public_nonce)
+            .get_public_key_at_key_id(&sender_test_params.ephemeral_public_nonce)
             .await
             .unwrap();
         let features = OutputFeatures::default();
@@ -237,13 +241,24 @@ mod test {
             minimum_value_promise: MicroTari::zero(),
         };
         let sender_info = TransactionSenderMessage::Single(Box::new(msg.clone()));
-        let output = p.create_output(Default::default(), &key_manager).await.unwrap();
+        let params =  UtxoTestParams {
+            value: msg.amount,
+            ..Default::default()};
+        let output = receiver_test_params.create_output(params, &key_manager).await.unwrap();
         let receiver = ReceiverTransactionProtocol::new(sender_info, output.clone(), &key_manager).await;
+
         assert!(receiver.is_finalized());
         let data = receiver.get_signed_data().unwrap();
+        let pubkey = key_manager
+            .get_public_key_at_key_id(&receiver_test_params.spend_key)
+            .await
+            .unwrap();
+        let offset = data.offset.clone();
+        let public_offset = PublicKey::from_secret_key(&offset);
+        let signing_pubkey = &pubkey - &public_offset;
         assert_eq!(data.tx_id.as_u64(), 15);
-        assert_eq!(data.public_spend_key, public_excess);
-        let commitment = key_manager.get_commitment(&p.spend_key, &500.into()).await.unwrap();
+        assert_eq!(data.public_spend_key, signing_pubkey);
+        let commitment = key_manager.get_commitment(&receiver_test_params.spend_key, &500.into()).await.unwrap();
         assert_eq!(&commitment, &data.output.commitment);
         data.output.verify_range_proof(&factories.range_proof).unwrap();
 
@@ -266,12 +281,12 @@ mod test {
             &m.burn_commitment,
         );
         let p_nonce = key_manager.get_public_key_at_key_id(&nonce_id).await.unwrap();
-        let p_spend_key = key_manager.get_public_key_at_key_id(&p.spend_key).await.unwrap();
+        let p_spend_key = key_manager.get_partial_kernel_signature_excess(&receiver_test_params.spend_key, &nonce_id).await.unwrap();
         let r_sum = &msg.public_nonce + &p_nonce;
         let excess = &msg.public_excess + &p_spend_key;
         let kernel_signature = key_manager
             .get_partial_kernel_signature(
-                &p.spend_key,
+                &receiver_test_params.spend_key,
                 &nonce_id,
                 &r_sum,
                 &excess,
@@ -282,7 +297,6 @@ mod test {
             )
             .await
             .unwrap();
-
         assert_eq!(data.partial_signature, kernel_signature);
 
         let (mask, value) = key_manager
