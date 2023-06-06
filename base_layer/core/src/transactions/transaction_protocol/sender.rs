@@ -446,7 +446,7 @@ impl SenderTransactionProtocol {
                 let mut received_output = rec.output.clone();
                 if received_output.verify_metadata_signature().is_err() {
                     // we need to make sure we use our values here and not the received values.
-                    let metadata_message = TransactionOutput::build_metadata_signature_message(
+                    let metadata_message = TransactionOutput::metadata_signature_message_from_parts(
                         &received_output.version,
                         &received_output.script, /* receiver chooses script here, can change fee per gram see issue: https://github.com/tari-project/tari/issues/5430 */
                         &info
@@ -809,7 +809,7 @@ mod test {
 
     use super::SenderState;
     use crate::{
-        core_key_manager::BaseLayerKeyManagerInterface,
+        core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch},
         covenants::Covenant,
         test_helpers::{
             create_consensus_constants,
@@ -1094,14 +1094,26 @@ mod test {
             EncryptedData::default(),
             0.into(),
         );
-        bob_output.metadata_signature = TransactionOutput::sign_metadata_signature_as_receiver_with_key_id(
-            &bob_output,
-            &key_manager,
-            None,
-            &msg.ephemeral_public_nonce,
-        )
-        .await
-        .unwrap();
+
+        let metadata_message = TransactionOutput::metadata_signature_message(&bob_output);
+        let ephemeral_commitment_nonce_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await
+            .unwrap();
+        bob_output.metadata_signature = key_manager
+            .get_receiver_partial_metadata_signature(
+                &bob_output.spending_key_id,
+                &bob_output.value.into(),
+                &ephemeral_commitment_nonce_id,
+                &bob_output.sender_offset_public_key,
+                &msg.ephemeral_public_nonce,
+                &bob_output.version,
+                &metadata_message,
+                bob_output.features.range_proof_type,
+            )
+            .await
+            .unwrap();
+
         // Receiver gets message, deserializes it etc, and creates his response
         let mut bob_info = SingleReceiverTransactionProtocol::create(&msg, bob_output, &key_manager)
             .await
@@ -1213,14 +1225,25 @@ mod test {
             0.into(),
         );
 
-        bob_output.metadata_signature = TransactionOutput::sign_metadata_signature_as_receiver_with_key_id(
-            &bob_output,
-            &key_manager,
-            None,
-            &msg.ephemeral_public_nonce,
-        )
-        .await
-        .unwrap();
+        let metadata_message = TransactionOutput::metadata_signature_message(&bob_output);
+        let ephemeral_commitment_nonce_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await
+            .unwrap();
+        bob_output.metadata_signature = key_manager
+            .get_receiver_partial_metadata_signature(
+                &bob_output.spending_key_id,
+                &bob_output.value.into(),
+                &ephemeral_commitment_nonce_id,
+                &bob_output.sender_offset_public_key,
+                &msg.ephemeral_public_nonce,
+                &bob_output.version,
+                &metadata_message,
+                bob_output.features.range_proof_type,
+            )
+            .await
+            .unwrap();
+
         // Receiver gets message, deserializes it etc, and creates his response
         let bob_info = SingleReceiverTransactionProtocol::create(&msg, bob_output, &key_manager)
             .await

@@ -290,22 +290,22 @@ async fn test_orphan_validator() {
 
     let (tx01, _) = spend_utxos(
         txn_schema!(from: vec![outputs[1].clone()], to: vec![20_000 * uT], fee: 10*uT, lock: 0, features:
-OutputFeatures::default()),
+        OutputFeatures::default()),
     )
     .await;
     let (tx02, _) = spend_utxos(
         txn_schema!(from: vec![outputs[2].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, features:
-OutputFeatures::default()),
+        OutputFeatures::default()),
     )
     .await;
     let (tx03, _) = spend_utxos(
         txn_schema!(from: vec![outputs[3].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, features:
-OutputFeatures::default()),
+        OutputFeatures::default()),
     )
     .await;
     let (tx04, _) = spend_utxos(
         txn_schema!(from: vec![outputs[3].clone()], to: vec![50_000 * uT], fee: 20*uT, lock: 2, features:
-OutputFeatures::default()),
+        OutputFeatures::default()),
     )
     .await;
     let (template, _) =

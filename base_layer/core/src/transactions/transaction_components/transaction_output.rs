@@ -56,7 +56,7 @@ use super::TransactionOutputVersion;
 use crate::{
     borsh::SerializedSize,
     consensus::DomainSeparatedConsensusHasher,
-    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch},
+    core_key_manager::BaseLayerKeyManagerInterface,
     covenants::Covenant,
     transactions::{
         tari_amount::MicroTari,
@@ -383,7 +383,7 @@ impl TransactionOutput {
     ) -> [u8; 32] {
         // We build the message separately to help with hardware wallet support. This reduces the amount of data that
         // needs to be transferred in order to sign the signature.
-        let message = TransactionOutput::build_metadata_signature_message(
+        let message = TransactionOutput::metadata_signature_message_from_parts(
             version,
             script,
             features,
@@ -420,9 +420,24 @@ impl TransactionOutput {
         }
     }
 
+    /// Convenience function to get the entire metadata signature message for the challenge. This contains all data
+    /// outside of the signing keys and nonces.
+    pub fn metadata_signature_message(key_manager_output: &KeyManagerOutput) -> [u8; 32] {
+        let common = DomainSeparatedConsensusHasher::<TransactionHashDomain>::new("metadata_message")
+            .chain(&key_manager_output.version)
+            .chain(&key_manager_output.script)
+            .chain(&key_manager_output.features)
+            .chain(&key_manager_output.covenant)
+            .chain(&key_manager_output.encrypted_data)
+            .chain(&key_manager_output.minimum_value_promise);
+        match key_manager_output.version {
+            TransactionOutputVersion::V0 | TransactionOutputVersion::V1 => common.finalize(),
+        }
+    }
+
     /// Convenience function to create the entire metadata signature message for the challenge. This contains all data
     /// outside of the signing keys and nonces.
-    pub fn build_metadata_signature_message(
+    pub fn metadata_signature_message_from_parts(
         version: &TransactionOutputVersion,
         script: &TariScript,
         features: &OutputFeatures,
@@ -430,16 +445,22 @@ impl TransactionOutput {
         encrypted_data: &EncryptedData,
         minimum_value_promise: MicroTari,
     ) -> [u8; 32] {
-        let common = DomainSeparatedConsensusHasher::<TransactionHashDomain>::new("metadata_message")
-            .chain(&version)
-            .chain(script)
-            .chain(features)
-            .chain(covenant)
-            .chain(encrypted_data)
-            .chain(&minimum_value_promise);
-        match version {
-            TransactionOutputVersion::V0 | TransactionOutputVersion::V1 => common.finalize(),
-        }
+        TransactionOutput::metadata_signature_message(&KeyManagerOutput {
+            version: *version,
+            script: script.clone(),
+            features: features.clone(),
+            covenant: covenant.clone(),
+            encrypted_data: encrypted_data.clone(),
+            minimum_value_promise,
+            // These fields are not used for the message
+            value: Default::default(),
+            input_data: Default::default(),
+            script_private_key_id: Default::default(),
+            sender_offset_public_key: Default::default(),
+            metadata_signature: Default::default(),
+            script_lock_height: u64::default(),
+            spending_key_id: Default::default(),
+        })
     }
 
     // Create partial commitment signature for the metadata for the receiver
@@ -486,6 +507,7 @@ impl TransactionOutput {
     }
 
     // Create partial commitment signature for the metadata for the sender
+    // TODO: Remove this method when core key manager is fully implemented
     pub fn create_sender_partial_metadata_signature(
         version: TransactionOutputVersion,
         commitment: &Commitment,
@@ -548,126 +570,6 @@ impl TransactionOutput {
                 Ok(PrivateKey::default())
             },
         }
-    }
-
-    pub async fn sign_metadata_signature_as_sender_receiver_with_key_id<KM: BaseLayerKeyManagerInterface>(
-        key_manager_output: &KeyManagerOutput,
-        key_manager: &KM,
-        sender_offset_private_key_id: &KeyId<PublicKey>,
-    ) -> Result<ComAndPubSignature, TransactionError> {
-        let metadata_message = TransactionOutput::build_metadata_signature_message(
-            &key_manager_output.version,
-            &key_manager_output.script,
-            &key_manager_output.features,
-            &key_manager_output.covenant,
-            &key_manager_output.encrypted_data,
-            key_manager_output.minimum_value_promise,
-        );
-        let ephemeral_commitment_nonce_id = key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await?;
-        let ephemeral_pubkey_nonce_id = key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await?;
-        let ephemeral_pubkey = key_manager.get_public_key_at_key_id(&ephemeral_pubkey_nonce_id).await?;
-        let ephemeral_commitment = key_manager
-            .get_metadata_signature_ephemeral_commitment(
-                &ephemeral_commitment_nonce_id,
-                key_manager_output.features.range_proof_type,
-            )
-            .await?;
-        let metadata_signature = key_manager
-            .get_metadata_signature(
-                &key_manager_output.spending_key_id,
-                &key_manager_output.value.into(),
-                &ephemeral_commitment_nonce_id,
-                &ephemeral_pubkey_nonce_id,
-                &sender_offset_private_key_id,
-                &ephemeral_pubkey,
-                &ephemeral_commitment,
-                &key_manager_output.version,,
-                &metadata_message,
-                key_manager_output.features.range_proof_typ,
-            )
-            .await?;
-        Ok(metadata_signature)
-    }
-
-    pub async fn sign_metadata_signature_as_receiver_with_key_id<KM: BaseLayerKeyManagerInterface>(
-        key_manager_output: &KeyManagerOutput,
-        key_manager: &KM,
-        ephemeral_commitment_nonce_id: Option<&KeyId<PublicKey>>,
-        ephemeral_pubkey: &PublicKey,
-    ) -> Result<ComAndPubSignature, TransactionError> {
-        let metadata_message = TransactionOutput::build_metadata_signature_message(
-            &key_manager_output.version,
-            &key_manager_output.script,
-            &key_manager_output.features,
-            &key_manager_output.covenant,
-            &key_manager_output.encrypted_data,
-            key_manager_output.minimum_value_promise,
-        );
-        let ephemeral_commitment_nonce = match ephemeral_commitment_nonce_id {
-            Some(id) => id.clone(),
-            None => {
-                key_manager
-                    .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-                    .await?
-            },
-        };
-        let receiver_metadata_signature = key_manager
-            .get_receiver_partial_metadata_signature(
-                &key_manager_output.spending_key_id,
-                &key_manager_output.value.into(),
-                &ephemeral_commitment_nonce,
-                &key_manager_output.sender_offset_public_key,
-                &ephemeral_pubkey,
-                &key_manager_output.version,
-                &metadata_message,
-                key_manager_output.features.range_proof_type,
-            )
-            .await?;
-        Ok(receiver_metadata_signature)
-    }
-
-    pub async fn sign_metadata_signature_as_sender_with_key_id<KM: BaseLayerKeyManagerInterface>(
-        key_manager_output: &KeyManagerOutput,
-        key_manager: &KM,
-        ephemeral_commitment_nonce: &Commitment,
-        ephemeral_pubkey_id: Option<&KeyId<PublicKey>>,
-        sender_offset_private_key_id: &KeyId<PublicKey>,
-    ) -> Result<ComAndPubSignature, TransactionError> {
-        let metadata_message = TransactionOutput::build_metadata_signature_message(
-            &key_manager_output.version,
-            &key_manager_output.script,
-            &key_manager_output.features,
-            &key_manager_output.covenant,
-            &key_manager_output.encrypted_data,
-            key_manager_output.minimum_value_promise,
-        );
-        let ephemeral_pubkey = match ephemeral_pubkey_id {
-            Some(id) => id.clone(),
-            None => {
-                key_manager
-                    .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-                    .await?
-            },
-        };
-        let commitment = key_manager
-            .get_commitment(&key_manager_output.spending_key_id, &key_manager_output.value.into())
-            .await?;
-        let sender_metadata_signature = key_manager
-            .get_sender_partial_metadata_signature(
-                &ephemeral_pubkey,
-                sender_offset_private_key_id,
-                &commitment,
-                &ephemeral_commitment_nonce,
-                &key_manager_output.version,
-                &metadata_message,
-            )
-            .await?;
-
-        Ok(sender_metadata_signature)
     }
 
     // Create complete commitment signature if you are both the sender and receiver

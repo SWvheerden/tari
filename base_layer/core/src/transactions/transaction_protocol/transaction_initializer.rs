@@ -358,11 +358,6 @@ where KM: BaseLayerKeyManagerInterface
                         let change_script = change_data.change_script.clone();
                         let change_key_id = change_data.change_secret_key_id.clone();
                         let sender_offset_key_id = change_data.change_sender_offset_key_id.clone();
-                        let commitment = self
-                            .key_manager
-                            .get_commitment(&change_key_id, &v.into())
-                            .await
-                            .map_err(|e| e.to_string())?;
 
                         let covenant = self
                             .change
@@ -403,7 +398,7 @@ where KM: BaseLayerKeyManagerInterface
                             .await
                             .map_err(|e| e.to_string())?;
                         let features = OutputFeatures::default();
-                        let metadata_message = TransactionOutput::build_metadata_signature_message(
+                        let metadata_message = TransactionOutput::metadata_signature_message_from_parts(
                             &output_version,
                             &change_script,
                             &features,
@@ -411,21 +406,6 @@ where KM: BaseLayerKeyManagerInterface
                             &encrypted_data,
                             minimum_value_promise,
                         );
-
-                        let receiver_metadata_signature = self
-                            .key_manager
-                            .get_receiver_partial_metadata_signature(
-                                &change_key_id,
-                                &v.into(),
-                                &ephemeral_commitment_nonce,
-                                &sender_offset_public_key,
-                                &ephemeral_pubkey,
-                                &output_version,
-                                &metadata_message,
-                                features.range_proof_type,
-                            )
-                            .await
-                            .map_err(|e| e.to_string())?;
 
                         let ephemeral_commitment = self
                             .key_manager
@@ -436,20 +416,22 @@ where KM: BaseLayerKeyManagerInterface
                             .await
                             .map_err(|e| e.to_string())?;
 
-                        let sender_metadata_signature = self
+                        let metadata_sig = self
                             .key_manager
-                            .get_sender_partial_metadata_signature(
+                            .get_metadata_signature(
+                                &change_key_id,
+                                &v.into(),
+                                &ephemeral_commitment_nonce,
                                 &ephemeral_pubkey_nonce,
                                 &change_key_id,
-                                &commitment,
+                                &ephemeral_pubkey,
                                 &ephemeral_commitment,
                                 &output_version,
                                 &metadata_message,
+                                features.range_proof_type,
                             )
                             .await
                             .map_err(|e| e.to_string())?;
-
-                        let metadata_sig = &receiver_metadata_signature + &sender_metadata_signature;
 
                         let change_key_manager_output = KeyManagerOutput::new_current_version(
                             v,

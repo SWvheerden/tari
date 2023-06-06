@@ -772,7 +772,7 @@ pub async fn create_stx_protocol(
             Some(data) => data.clone(),
             None => TransactionOutputVersion::get_current_version(),
         };
-        let mut output = KeyManagerOutputBuilder::new(val, spending_key)
+        let output = KeyManagerOutputBuilder::new(val, spending_key)
             .with_features(schema.features.clone())
             .with_script(schema.script.clone())
             .with_encrypted_data(&key_manager)
@@ -783,16 +783,11 @@ pub async fn create_stx_protocol(
             .with_version(version)
             .with_sender_offset_public_key(sender_offset_public_key)
             .with_script_private_key(script_key_id.clone())
+            .sign_as_sender_and_receiver_using_key_id(&key_manager, &sender_offset_key_id)
+            .await
+            .unwrap()
             .try_build()
             .unwrap();
-
-        output.metadata_signature = TransactionOutput::sign_metadata_signature_as_sender_receiver_with_key_id(
-            &output,
-            &key_manager,
-            &sender_offset_key_id,
-        )
-        .await
-        .unwrap();
 
         outputs.push(output.clone());
         stx_builder.with_output(output, script_key_id).await.unwrap();
@@ -812,17 +807,43 @@ pub async fn create_stx_protocol(
         // .unwrap();
         // utxo.sender_offset_public_key = test_params.sender_offset_public_key;
         // outputs.push(utxo.clone());
+
         let sender_offset_key_id = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
-        utxo.metadata_signature = TransactionOutput::sign_metadata_signature_as_sender_receiver_with_key_id(
-            &utxo,
-            &key_manager,
-            &sender_offset_key_id,
-        )
-        .await
-        .unwrap();
+        let metadata_message = TransactionOutput::metadata_signature_message(&utxo);
+        let ephemeral_commitment_nonce_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await
+            .unwrap();
+        let ephemeral_pubkey_nonce_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await
+            .unwrap();
+        let ephemeral_pubkey = key_manager
+            .get_public_key_at_key_id(&ephemeral_pubkey_nonce_id)
+            .await
+            .unwrap();
+        let ephemeral_commitment = key_manager
+            .get_metadata_signature_ephemeral_commitment(&ephemeral_commitment_nonce_id, utxo.features.range_proof_type)
+            .await
+            .unwrap();
+        utxo.metadata_signature = key_manager
+            .get_metadata_signature(
+                &utxo.spending_key_id,
+                &utxo.value.into(),
+                &ephemeral_commitment_nonce_id,
+                &ephemeral_pubkey_nonce_id,
+                &sender_offset_key_id,
+                &ephemeral_pubkey,
+                &ephemeral_commitment,
+                &utxo.version,
+                &metadata_message,
+                utxo.features.range_proof_type,
+            )
+            .await
+            .unwrap();
 
         stx_builder.with_output(utxo, sender_offset_key_id).await.unwrap();
     }
