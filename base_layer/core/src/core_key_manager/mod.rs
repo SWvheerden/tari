@@ -22,12 +22,12 @@
 
 mod handle;
 pub use handle::CoreKeyManagerHandle;
+
 mod interface;
-pub use interface::CoreKeyManagerBranch;
+pub use interface::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TxoType};
+
 mod initializer;
 pub use initializer::CoreKeyManagerInitializer;
 
 mod service;
-pub use interface::BaseLayerKeyManagerInterface;
 pub use service::CoreKeyManagerInner;
-pub use tari_key_manager::key_manager_service::KeyId;

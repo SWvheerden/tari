@@ -37,17 +37,19 @@ use tari_core::{
     test_helpers::{
         blockchain::{create_store_with_consensus_and_validators_and_config, create_test_blockchain_db},
         create_consensus_rules,
+        create_test_core_key_manager_with_memory_db,
     },
     transactions::{
         tari_amount::MicroTari,
         test_helpers::{create_utxo, spend_utxos},
-        transaction_components::{OutputFeatures, TransactionOutput, TransactionOutputVersion, UnblindedOutput},
+        transaction_components::{KeyManagerOutput, OutputFeatures, TransactionOutput, TransactionOutputVersion},
         CryptoFactories,
     },
     txn_schema,
     validation::{mocks::MockValidator, transaction::TransactionChainLinkedValidator},
 };
 use tari_crypto::keys::PublicKey as PublicKeyTrait;
+use tari_key_manager::key_manager_service::KeyManagerInterface;
 use tari_script::{inputs, script, TariScript};
 use tari_service_framework::reply_channel;
 use tokio::sync::{broadcast, mpsc};
@@ -247,6 +249,7 @@ async fn inbound_fetch_blocks_before_horizon_height() {
     let factories = CryptoFactories::default();
     let consensus_manager = ConsensusManager::builder(Network::LocalNet).build();
     let block0 = consensus_manager.get_genesis_block();
+    let key_manager = create_test_core_key_manager_with_memory_db();
     let validators = Validators::new(
         MockValidator::new(true),
         MockValidator::new(true),
@@ -311,13 +314,14 @@ async fn inbound_fetch_blocks_before_horizon_height() {
         utxo.minimum_value_promise,
     )
     .unwrap();
-    let unblinded_output = UnblindedOutput::new_current_version(
+    let key_id = key_manager.import_key(key.clone()).await.unwrap();
+    let key_manager_output = KeyManagerOutput::new_current_version(
         amount,
-        key.clone(),
+        key_id.clone(),
         Default::default(),
         script,
         inputs!(PublicKey::from_secret_key(&key)),
-        key,
+        key_id,
         PublicKey::from_secret_key(&offset),
         metadata_signature,
         0,
@@ -327,15 +331,25 @@ async fn inbound_fetch_blocks_before_horizon_height() {
     );
 
     let txn = txn_schema!(
-        from: vec![unblinded_output],
+        from: vec![key_manager_output],
         to: vec![MicroTari(5_000), MicroTari(4_000)]
     );
-    let (txn, _) = spend_utxos(txn);
-    let block1 = append_block(&store, &block0, vec![txn], &consensus_manager, 1.into()).unwrap();
-    let block2 = append_block(&store, &block1, vec![], &consensus_manager, 1.into()).unwrap();
-    let block3 = append_block(&store, &block2, vec![], &consensus_manager, 1.into()).unwrap();
-    let block4 = append_block(&store, &block3, vec![], &consensus_manager, 1.into()).unwrap();
-    let _block5 = append_block(&store, &block4, vec![], &consensus_manager, 1.into()).unwrap();
+    let (txn, _) = spend_utxos(txn).await;
+    let block1 = append_block(&store, &block0, vec![txn], &consensus_manager, 1.into(), &key_manager)
+        .await
+        .unwrap();
+    let block2 = append_block(&store, &block1, vec![], &consensus_manager, 1.into(), &key_manager)
+        .await
+        .unwrap();
+    let block3 = append_block(&store, &block2, vec![], &consensus_manager, 1.into(), &key_manager)
+        .await
+        .unwrap();
+    let block4 = append_block(&store, &block3, vec![], &consensus_manager, 1.into(), &key_manager)
+        .await
+        .unwrap();
+    let _block5 = append_block(&store, &block4, vec![], &consensus_manager, 1.into(), &key_manager)
+        .await
+        .unwrap();
 
     if let Ok(NodeCommsResponse::HistoricalBlocks(received_blocks)) = inbound_nch
         .handle_request(NodeCommsRequest::FetchMatchingBlocks {

@@ -61,7 +61,7 @@ use tari_key_manager::{
 use tari_utilities::{hex::Hex, ByteArray};
 
 use crate::transactions::{
-    transaction_components::{TransactionError, TransactionInput, TransactionInputVersion},
+    transaction_components::{KernelFeatures, TransactionError, TransactionInput, TransactionInputVersion},
     CryptoFactories,
 };
 
@@ -69,11 +69,12 @@ const LOG_TARGET: &str = "key_manager::key_manager_service";
 const KEY_MANAGER_MAX_SEARCH_DEPTH: u64 = 1_000_000;
 
 use crate::{
-    core_key_manager::interface::CoreKeyManagerBranch,
+    core_key_manager::interface::{CoreKeyManagerBranch, TxoType},
     transactions::{
         tari_amount::MicroTari,
         transaction_components::{
             EncryptedData,
+            RangeProofType,
             TransactionKernel,
             TransactionKernelVersion,
             TransactionOutput,
@@ -213,6 +214,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
                 Ok(km.derive_public_key(*index)?.key)
             },
             KeyId::Imported { key } => Ok(key.clone()),
+            KeyId::Zero => Ok(PublicKey::default()),
         }
     }
 
@@ -303,6 +305,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
                 let pvt_key = self.db.get_imported_key(key)?;
                 Ok(pvt_key)
             },
+            KeyId::Zero => Ok(PrivateKey::default()),
         }
     }
 
@@ -475,15 +478,22 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     async fn get_metadata_signature_ephemeral_private_key_pair(
         &self,
         nonce_id: &KeyId<PublicKey>,
+        range_proof_type: RangeProofType,
     ) -> Result<(PrivateKey, PrivateKey), TransactionError> {
         let nonce_private_key = self.get_private_key(nonce_id).await?;
-        let hasher_a = DomainSeparatedHasher::<Blake256, KeyManagerHashingDomain>::new_with_label(
-            "metadata_signature_ephemeral_nonce_a",
-        );
-        let a_hash = hasher_a.chain(nonce_private_key.as_bytes()).finalize();
-        let nonce_a = PrivateKey::from_bytes(a_hash.as_ref()).map_err(|_| {
-            TransactionError::ConversionError("Invalid private key for sender offset private key".to_string())
-        })?;
+        let nonce_a = match range_proof_type {
+            RangeProofType::BulletProofPlus => {
+                let hasher_a = DomainSeparatedHasher::<Blake256, KeyManagerHashingDomain>::new_with_label(
+                    "metadata_signature_ephemeral_nonce_a",
+                );
+                let a_hash = hasher_a.chain(nonce_private_key.as_bytes()).finalize();
+                PrivateKey::from_bytes(a_hash.as_ref()).map_err(|_| {
+                    TransactionError::ConversionError("Invalid private key for sender offset private key".to_string())
+                })
+            },
+            RangeProofType::RevealedValue => Ok(PrivateKey::default()),
+        }?;
+
         let hasher_b = DomainSeparatedHasher::<Blake256, KeyManagerHashingDomain>::new_with_label(
             "metadata_signature_ephemeral_nonce_b",
         );
@@ -497,46 +507,70 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     pub async fn get_metadata_signature_ephemeral_commitment(
         &self,
         nonce_id: &KeyId<PublicKey>,
+        range_proof_type: RangeProofType,
     ) -> Result<Commitment, TransactionError> {
-        let (nonce_a, nonce_b) = self.get_metadata_signature_ephemeral_private_key_pair(nonce_id).await?;
-        Ok(self.crypto_factories.commitment.commit(&nonce_a, &nonce_b))
+        let (nonce_a, nonce_b) = self
+            .get_metadata_signature_ephemeral_private_key_pair(nonce_id, range_proof_type)
+            .await?;
+        Ok(self.crypto_factories.commitment.commit(&nonce_b, &nonce_a))
     }
 
     pub async fn get_metadata_signature(
         &self,
-        value_as_private_key: &PrivateKey,
         spending_key_id: &KeyId<PublicKey>,
-        sender_offset_private_key: &PrivateKey,
-        nonce_a: &PrivateKey,
-        nonce_b: &PrivateKey,
-        nonce_x: &PrivateKey,
-        challenge_bytes: &[u8; 32],
+        value_as_private_key: &PrivateKey,
+        ephemeral_commitment_nonce_id: &KeyId<PublicKey>,
+        ephemeral_private_nonce_id: &KeyId<PublicKey>,
+        sender_offset_key_id: &KeyId<PublicKey>,
+        ephemeral_pubkey: &PublicKey,
+        ephemeral_commitment: &Commitment,
+        tx_version: &TransactionOutputVersion,
+        metadata_signature_message: &[u8; 32],
+        range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError> {
-        let spending_key = self.get_private_key(spending_key_id).await?;
-        Ok(ComAndPubSignature::sign(
-            value_as_private_key,
-            &spending_key,
-            sender_offset_private_key,
-            nonce_a,
-            nonce_b,
-            nonce_x,
-            challenge_bytes,
-            &*self.crypto_factories.commitment,
-        )?)
+        let sender_offset_public_key = self.get_public_key_at_key_id(sender_offset_key_id).await?;
+        let receiver_partial_metadata_signature = self
+            .get_receiver_partial_metadata_signature(
+                spending_key_id,
+                value_as_private_key,
+                ephemeral_commitment_nonce_id,
+                &sender_offset_public_key,
+                &ephemeral_pubkey,
+                tx_version,
+                metadata_signature_message,
+                range_proof_type,
+            )
+            .await?;
+        let commitment = self.get_commitment(spending_key_id, value_as_private_key).await?;
+        let sender_partial_metadata_signature = self
+            .get_sender_partial_metadata_signature(
+                ephemeral_private_nonce_id,
+                sender_offset_key_id,
+                &commitment,
+                ephemeral_commitment,
+                tx_version,
+                metadata_signature_message,
+            )
+            .await?;
+        let metadata_signature = &receiver_partial_metadata_signature + &sender_partial_metadata_signature;
+        Ok(metadata_signature)
     }
 
     pub async fn get_receiver_partial_metadata_signature(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         value: &PrivateKey,
-        nonce_id: &KeyId<PublicKey>,
+        ephemeral_commitment_nonce_id: &KeyId<PublicKey>,
         sender_offset_public_key: &PublicKey,
         ephemeral_pubkey: &PublicKey,
         tx_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
+        range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError> {
-        let (nonce_a, nonce_b) = self.get_metadata_signature_ephemeral_private_key_pair(nonce_id).await?;
-        let ephemeral_commitment = self.crypto_factories.commitment.commit(&nonce_a, &nonce_b);
+        let (nonce_a, nonce_b) = self
+            .get_metadata_signature_ephemeral_private_key_pair(ephemeral_commitment_nonce_id, range_proof_type)
+            .await?;
+        let ephemeral_commitment = self.crypto_factories.commitment.commit(&nonce_b, &nonce_a);
         let spend_private_key = self.get_private_key(spend_key_id).await?;
         let commitment = self.crypto_factories.commitment.commit(&spend_private_key, value);
         let challenge = TransactionOutput::finalize_metadata_signature_challenge(
@@ -563,14 +597,14 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
 
     pub async fn get_sender_partial_metadata_signature(
         &self,
-        nonce_id: &KeyId<PublicKey>,
+        ephemeral_private_nonce_id: &KeyId<PublicKey>,
         sender_offset_key_id: &KeyId<PublicKey>,
         commitment: &Commitment,
         ephemeral_commitment: &Commitment,
         tx_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
     ) -> Result<ComAndPubSignature, TransactionError> {
-        let ephemeral_private_key = self.get_private_key(nonce_id).await?;
+        let ephemeral_private_key = self.get_private_key(ephemeral_private_nonce_id).await?;
         let ephemeral_pubkey = PublicKey::from_secret_key(&ephemeral_private_key);
         let sender_offset_private_key = self.get_private_key(sender_offset_key_id).await?;
         let sender_offset_public_key = PublicKey::from_secret_key(&sender_offset_private_key);
@@ -626,11 +660,22 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         total_excess: &PublicKey,
         kernel_version: &TransactionKernelVersion,
         kernel_message: &[u8; 32],
+        kernel_features: &KernelFeatures,
+        txo_type: TxoType,
     ) -> Result<Signature, TransactionError> {
-        let spending_private_key = self.get_private_key(spending_key).await?;
+        let spending_private_key = if txo_type == TxoType::Output {
+            self.get_private_key(spending_key).await?
+        } else {
+            PrivateKey::default() - self.get_private_key(spending_key).await?
+        };
         let private_nonce = self.get_private_key(nonce_id).await?;
-        let signing_key =
-            spending_private_key - &self.get_partial_private_kernel_offset(spending_key, nonce_id).await?;
+        // we cannot use an offset with a coinbase tx as this will not allow us to check the coinbase commitment
+        let signing_key = if kernel_features.is_coinbase() {
+            spending_private_key
+        } else {
+            spending_private_key - &self.get_partial_private_kernel_offset(spending_key, nonce_id).await?
+        };
+
         let challenge = TransactionKernel::finalize_kernel_signature_challenge(
             kernel_version,
             total_nonce,

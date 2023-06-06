@@ -81,7 +81,7 @@ use tari_core::{
     transactions::{
         fee::Fee,
         tari_amount::*,
-        test_helpers::{create_non_recoverable_unblinded_output, TestParams as TestParamsHelpers},
+        test_helpers::{create_key_manager_output_with_data, TestParams as TestParamsHelpers},
         transaction_components::{KernelBuilder, OutputFeatures, Transaction},
         transaction_protocol::{
             proto::protocol as proto,
@@ -2355,7 +2355,7 @@ async fn test_transaction_cancellation() {
         .remove(&tx_id)
         .is_none());
 
-    let input = create_non_recoverable_unblinded_output(
+    let input = create_key_manager_output_with_data(
         TariScript::default(),
         OutputFeatures::default(),
         &TestParamsHelpers::new(),
@@ -2391,7 +2391,7 @@ async fn test_transaction_cancellation() {
         )
         .with_change_script(script!(Nop), ExecutionStack::default(), PrivateKey::random(&mut OsRng));
 
-    let mut stp = builder.build(&factories, None, u64::MAX).unwrap();
+    let mut stp = builder.build().await.unwrap();
     let tx_sender_msg = stp.build_single_round_message().unwrap();
     let tx_id2 = tx_sender_msg.tx_id;
     let proto_message = proto::TransactionSenderMessage::single(tx_sender_msg.try_into().unwrap());
@@ -2439,7 +2439,7 @@ async fn test_transaction_cancellation() {
         .is_none());
 
     // Lets cancel the last one using a Comms stack message
-    let input = create_non_recoverable_unblinded_output(
+    let input = create_key_manager_output_with_data(
         TariScript::default(),
         OutputFeatures::default(),
         &TestParamsHelpers::new(),
@@ -2474,7 +2474,7 @@ async fn test_transaction_cancellation() {
         )
         .with_change_script(script!(Nop), ExecutionStack::default(), PrivateKey::random(&mut OsRng));
 
-    let mut stp = builder.build(&factories, None, u64::MAX).unwrap();
+    let mut stp = builder.build().await.unwrap();
     let tx_sender_msg = stp.build_single_round_message().unwrap();
     let tx_id3 = tx_sender_msg.tx_id;
     let proto_message = proto::TransactionSenderMessage::single(tx_sender_msg.try_into().unwrap());
@@ -3151,7 +3151,7 @@ async fn test_restarting_transaction_protocols() {
             inputs!(PublicKey::from_secret_key(&script_private_key)),
             script_private_key,
         );
-    let mut bob_stp = builder.build(&factories, None, u64::MAX).unwrap();
+    let mut bob_stp = builder.build().await.unwrap();
     let msg = bob_stp.build_single_round_message().unwrap();
     let bob_pre_finalize = bob_stp.clone();
 
@@ -4456,7 +4456,7 @@ async fn test_resend_on_startup() {
         NodeIdentity::random(&mut OsRng, get_next_memory_address(), PeerFeatures::COMMUNICATION_NODE);
 
     // First we will check the Send Tranasction message
-    let input = create_non_recoverable_unblinded_output(
+    let input = create_key_manager_output_with_data(
         script!(Nop),
         OutputFeatures::default(),
         &TestParamsHelpers::new(),
@@ -4491,7 +4491,7 @@ async fn test_resend_on_startup() {
         )
         .with_change_script(script!(Nop), ExecutionStack::default(), PrivateKey::random(&mut OsRng));
 
-    let mut stp = builder.build(&factories, None, u64::MAX).unwrap();
+    let mut stp = builder.build().await.unwrap();
     let stp_msg = stp.build_single_round_message().unwrap();
     let tx_sender_msg = TransactionSenderMessage::Single(Box::new(stp_msg));
 
@@ -4946,7 +4946,7 @@ async fn test_transaction_timeout_cancellation() {
 
     // Now to test if the timeout has elapsed during downtime and that it is honoured on startup
     // First we will check the Send Transction message
-    let input = create_non_recoverable_unblinded_output(
+    let input = create_key_manager_output_with_data(
         TariScript::default(),
         OutputFeatures::default(),
         &TestParamsHelpers::new(),
@@ -4981,7 +4981,7 @@ async fn test_transaction_timeout_cancellation() {
         )
         .with_change_script(script!(Nop), ExecutionStack::default(), PrivateKey::random(&mut OsRng));
 
-    let mut stp = builder.build(&factories, None, u64::MAX).unwrap();
+    let mut stp = builder.build().await.unwrap();
     let stp_msg = stp.build_single_round_message().unwrap();
     let tx_sender_msg = TransactionSenderMessage::Single(Box::new(stp_msg));
 

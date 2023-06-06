@@ -47,6 +47,7 @@ pub struct NextKeyResult<PK: PublicKey> {
 pub enum KeyId<PK> {
     Managed { branch: String, index: u64 },
     Imported { key: PK },
+    Zero,
 }
 
 impl<PK> KeyId<PK>
@@ -56,6 +57,7 @@ where PK: Clone
         match self {
             KeyId::Managed { index, .. } => Some(*index),
             KeyId::Imported { .. } => None,
+            KeyId::Zero => None,
         }
     }
 
@@ -63,6 +65,7 @@ where PK: Clone
         match self {
             KeyId::Managed { branch, .. } => Some(branch.clone()),
             KeyId::Imported { .. } => None,
+            KeyId::Zero => None,
         }
     }
 
@@ -70,6 +73,7 @@ where PK: Clone
         match self {
             KeyId::Managed { .. } => None,
             KeyId::Imported { key } => Some(key.clone()),
+            KeyId::Zero => None,
         }
     }
 }
@@ -82,16 +86,14 @@ where PK: ByteArray
         match self {
             KeyId::Managed { branch: b, index: i } => write!(f, "managed.'{}'.'{}'", b, i),
             KeyId::Imported { key: public_key } => write!(f, "imported.'{}'", public_key.to_hex()),
+            KeyId::Zero => write!(f, "zero"),
         }
     }
 }
 
 impl<PK> Default for KeyId<PK> {
     fn default() -> Self {
-        KeyId::Managed {
-            branch: "".to_string(),
-            index: 0,
-        }
+        KeyId::Zero
     }
 }
 
@@ -124,6 +126,7 @@ where PK: ByteArray
                     let key = PK::from_hex(parts[1]).map_err(|_| "Invalid public key".to_string())?;
                     Ok(KeyId::Imported { key })
                 },
+                "zero" => Ok(KeyId::Zero),
                 _ => Err("Wrong format".to_string()),
             },
         }

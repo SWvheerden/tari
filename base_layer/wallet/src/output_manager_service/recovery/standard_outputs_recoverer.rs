@@ -26,7 +26,7 @@ use log::*;
 use rand::rngs::OsRng;
 use tari_common_types::{
     transaction::TxId,
-    types::{PrivateKey, PublicKey},
+    types::{PrivateKey, PrivateKey, PublicKey},
 };
 use tari_core::transactions::{
     tari_amount::MicroTari,

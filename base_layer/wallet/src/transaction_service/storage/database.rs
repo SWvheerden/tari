@@ -33,7 +33,7 @@ use log::*;
 use tari_common_types::{
     tari_address::TariAddress,
     transaction::{ImportStatus, TransactionDirection, TransactionStatus, TxId},
-    types::{BlockHash, PrivateKey},
+    types::{PrivateKey, BlockHash},
 };
 use tari_core::transactions::{tari_amount::MicroTari, transaction_components::Transaction};
 

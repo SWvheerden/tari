@@ -18,7 +18,7 @@ mod test {
         chain_metadata::ChainMetadata,
         tari_address::TariAddress,
         transaction::{TransactionDirection, TransactionStatus},
-        types::{PrivateKey, PublicKey},
+        types::{PrivateKey, PrivateKey, PublicKey},
     };
     use tari_comms::peer_manager::NodeId;
     use tari_comms_dht::event::DhtEvent;

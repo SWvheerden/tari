@@ -46,11 +46,13 @@ use tari_key_manager::{
 use tokio::sync::RwLock;
 
 use crate::{
-    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, CoreKeyManagerInner},
+    core_key_manager::{interface::TxoType, BaseLayerKeyManagerInterface, CoreKeyManagerBranch, CoreKeyManagerInner},
     transactions::{
         tari_amount::MicroTari,
         transaction_components::{
             EncryptedData,
+            KernelFeatures,
+            RangeProofType,
             TransactionError,
             TransactionInputVersion,
             TransactionKernelVersion,
@@ -300,6 +302,8 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         total_excess: &PublicKey,
         kernel_version: &TransactionKernelVersion,
         kernel_message: &[u8; 32],
+        kernel_features: &KernelFeatures,
+        txo_type: TxoType,
     ) -> Result<Signature, TransactionError> {
         (*self.core_key_manager_inner)
             .read()
@@ -311,6 +315,8 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
                 total_excess,
                 kernel_version,
                 kernel_message,
+                kernel_features,
+                txo_type,
             )
             .await
     }
@@ -380,35 +386,42 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     async fn get_metadata_signature_ephemeral_commitment(
         &self,
         nonce_id: &KeyId<PublicKey>,
+        range_proof_type: RangeProofType,
     ) -> Result<Commitment, TransactionError> {
         (*self.core_key_manager_inner)
             .read()
             .await
-            .get_metadata_signature_ephemeral_commitment(nonce_id)
+            .get_metadata_signature_ephemeral_commitment(nonce_id, range_proof_type)
             .await
     }
 
     async fn get_metadata_signature(
         &self,
-        value_as_private_key: &PrivateKey,
         spending_key_id: &KeyId<PublicKey>,
-        sender_offset_private_key: &PrivateKey,
-        nonce_a: &PrivateKey,
-        nonce_b: &PrivateKey,
-        nonce_x: &PrivateKey,
-        challenge_bytes: &[u8; 32],
+        value_as_private_key: &PrivateKey,
+        ephemeral_commitment_nonce_id: &KeyId<PublicKey>,
+        ephemeral_private_nonce_id: &KeyId<PublicKey>,
+        sender_offset_key_id: &KeyId<PublicKey>,
+        ephemeral_pubkey: &PublicKey,
+        ephemeral_commitment: &Commitment,
+        tx_version: &TransactionOutputVersion,
+        metadata_signature_message: &[u8; 32],
+        range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError> {
         (*self.core_key_manager_inner)
             .read()
             .await
             .get_metadata_signature(
-                value_as_private_key,
                 spending_key_id,
-                sender_offset_private_key,
-                nonce_a,
-                nonce_b,
-                nonce_x,
-                challenge_bytes,
+                value_as_private_key,
+                ephemeral_commitment_nonce_id,
+                ephemeral_private_nonce_id,
+                sender_offset_key_id,
+                ephemeral_pubkey,
+                ephemeral_commitment,
+                tx_version,
+                metadata_signature_message,
+                range_proof_type,
             )
             .await
     }
@@ -417,11 +430,12 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         &self,
         spend_key_id: &KeyId<PublicKey>,
         value: &PrivateKey,
-        nonce_id: &KeyId<PublicKey>,
+        ephemeral_commitment_nonce_id: &KeyId<PublicKey>,
         sender_offset_public_key: &PublicKey,
         ephemeral_pubkey: &PublicKey,
         tx_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
+        range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError> {
         (*self.core_key_manager_inner)
             .read()
@@ -429,18 +443,19 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             .get_receiver_partial_metadata_signature(
                 spend_key_id,
                 value,
-                nonce_id,
+                ephemeral_commitment_nonce_id,
                 sender_offset_public_key,
                 ephemeral_pubkey,
                 tx_version,
                 metadata_signature_message,
+                range_proof_type,
             )
             .await
     }
 
     async fn get_sender_partial_metadata_signature(
         &self,
-        nonce_id: &KeyId<PublicKey>,
+        ephemeral_private_nonce_id: &KeyId<PublicKey>,
         sender_offset_key_id: &KeyId<PublicKey>,
         commitment: &Commitment,
         ephemeral_commitment: &Commitment,
@@ -451,7 +466,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             .read()
             .await
             .get_sender_partial_metadata_signature(
-                nonce_id,
+                ephemeral_private_nonce_id,
                 sender_offset_key_id,
                 commitment,
                 ephemeral_commitment,

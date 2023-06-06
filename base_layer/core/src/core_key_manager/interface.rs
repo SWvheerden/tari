@@ -37,12 +37,20 @@ use crate::transactions::{
     tari_amount::MicroTari,
     transaction_components::{
         EncryptedData,
+        KernelFeatures,
+        RangeProofType,
         TransactionError,
         TransactionInputVersion,
         TransactionKernelVersion,
         TransactionOutputVersion,
     },
 };
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum TxoType {
+    Input,
+    Output,
+}
 
 #[derive(Clone, Copy, EnumIter)]
 pub enum CoreKeyManagerBranch {
@@ -122,6 +130,8 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
         total_excess: &PublicKey,
         kernel_version: &TransactionKernelVersion,
         kernel_message: &[u8; 32],
+        kernel_features: &KernelFeatures,
+        txo_type: TxoType,
     ) -> Result<Signature, TransactionError>;
 
     async fn get_partial_kernel_signature_excess(
@@ -159,33 +169,38 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
     async fn get_metadata_signature_ephemeral_commitment(
         &self,
         nonce_id: &KeyId<PublicKey>,
+        range_proof_type: RangeProofType,
     ) -> Result<Commitment, TransactionError>;
 
     async fn get_metadata_signature(
         &self,
-        value_as_private_key: &PrivateKey,
         spending_key_id: &KeyId<PublicKey>,
-        sender_offset_private_key: &PrivateKey,
-        nonce_a: &PrivateKey,
-        nonce_b: &PrivateKey,
-        nonce_x: &PrivateKey,
-        challenge_bytes: &[u8; 32],
+        value_as_private_key: &PrivateKey,
+        ephemeral_commitment_nonce_id: &KeyId<PublicKey>,
+        ephemeral_private_nonce_id: &KeyId<PublicKey>,
+        sender_offset_key_id: &KeyId<PublicKey>,
+        ephemeral_pubkey: &PublicKey,
+        ephemeral_commitment: &Commitment,
+        tx_version: &TransactionOutputVersion,
+        metadata_signature_message: &[u8; 32],
+        range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError>;
 
     async fn get_receiver_partial_metadata_signature(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         value: &PrivateKey,
-        nonce_id: &KeyId<PublicKey>,
+        ephemeral_commitment_nonce_id: &KeyId<PublicKey>,
         sender_offset_public_key: &PublicKey,
         ephemeral_pubkey: &PublicKey,
         tx_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
+        range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError>;
 
     async fn get_sender_partial_metadata_signature(
         &self,
-        nonce_id: &KeyId<PublicKey>,
+        ephemeral_private_nonce_id: &KeyId<PublicKey>,
         sender_offset_key_id: &KeyId<PublicKey>,
         commitment: &Commitment,
         ephemeral_commitment: &Commitment,
