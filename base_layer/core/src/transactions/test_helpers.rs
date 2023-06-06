@@ -927,7 +927,7 @@ pub async fn create_coinbase_kernel(
     KernelBuilder::new()
         .with_features(kernel_features)
         .with_excess(&Commitment::from_public_key(&public_spend_key))
-        .with_signature(&kernel_signature)
+        .with_signature(kernel_signature)
         .build()
         .unwrap()
 }
@@ -940,7 +940,7 @@ pub fn create_test_kernel(fee: MicroTari, lock_height: u64, features: KernelFeat
         .with_lock_height(lock_height)
         .with_features(features)
         .with_excess(&Commitment::from_public_key(&excess))
-        .with_signature(&s)
+        .with_signature(s)
         .build()
         .unwrap()
 }

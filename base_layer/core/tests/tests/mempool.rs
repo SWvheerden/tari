@@ -1068,7 +1068,7 @@ async fn consensus_validation_large_tx() {
         let test_params = TestParams::new(&key_manager).await;
         pub_excess = &pub_excess +
             &key_manager
-                .get_partial_kernel_signature_excess(&test_params.spend_key, &test_params.kernel_nonce)
+                .get_partial_kernel_signature_excess_with_offset(&test_params.spend_key, &test_params.kernel_nonce)
                 .await
                 .unwrap();
         pub_nonce = &pub_nonce +
@@ -1140,7 +1140,7 @@ async fn consensus_validation_large_tx() {
         .with_fee(fee)
         .with_lock_height(0)
         .with_excess(&Commitment::from_public_key(&pub_nonce))
-        .with_signature(&agg_sig)
+        .with_signature(agg_sig)
         .build()
         .unwrap();
     let kernels = vec![kernel];

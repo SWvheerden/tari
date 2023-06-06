@@ -281,7 +281,7 @@ mod test {
             &m.burn_commitment,
         );
         let p_nonce = key_manager.get_public_key_at_key_id(&nonce_id).await.unwrap();
-        let p_spend_key = key_manager.get_partial_kernel_signature_excess(&receiver_test_params.spend_key, &nonce_id).await.unwrap();
+        let p_spend_key = key_manager.get_partial_kernel_signature_excess_with_offset(&receiver_test_params.spend_key, &nonce_id).await.unwrap();
         let r_sum = &msg.public_nonce + &p_nonce;
         let excess = &msg.public_excess + &p_spend_key;
         let kernel_signature = key_manager

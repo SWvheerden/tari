@@ -112,7 +112,7 @@ pub async fn create_coinbase(
         .await
         .unwrap();
     let kernel = KernelBuilder::new()
-        .with_signature(&sig)
+        .with_signature(sig)
         .with_excess(&excess)
         .with_features(kernel_features)
         .build()
@@ -214,7 +214,7 @@ fn print_new_genesis_block(network: Network, extra: &str) {
     let (pk, sig) = create_random_signature_from_s_key(key, 0.into(), 0, KernelFeatures::COINBASE_KERNEL);
     let excess = Commitment::from_public_key(&pk);
     let kernel = KernelBuilder::new()
-        .with_signature(&sig)
+        .with_signature(sig)
         .with_excess(&excess)
         .with_features(KernelFeatures::COINBASE_KERNEL)
         .build()

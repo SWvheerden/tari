@@ -668,13 +668,13 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         } else {
             PrivateKey::default() - self.get_private_key(spending_key).await?
         };
-        let private_nonce = self.get_private_key(nonce_id).await?;
         // we cannot use an offset with a coinbase tx as this will not allow us to check the coinbase commitment
         let signing_key = if kernel_features.is_coinbase() {
             spending_private_key
         } else {
             spending_private_key - &self.get_partial_private_kernel_offset(spending_key, nonce_id).await?
         };
+        let private_nonce = self.get_private_key(nonce_id).await?;
 
         let challenge = TransactionKernel::finalize_kernel_signature_challenge(
             kernel_version,
@@ -687,15 +687,15 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         Ok(signature)
     }
 
-    pub async fn get_partial_kernel_signature_excess(
+    pub async fn get_partial_kernel_signature_excess_with_offset(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         nonce_id: &KeyId<PublicKey>,
     ) -> Result<PublicKey, TransactionError> {
+        let private_key = self.get_private_key(spend_key_id).await?;
         let offset = self.get_partial_private_kernel_offset(spend_key_id, nonce_id).await?;
-        let excess = self.get_private_key(spend_key_id).await?;
-        let combined_excess = excess - &offset;
-        Ok(PublicKey::from_secret_key(&combined_excess))
+        let excess = private_key - &offset;
+        Ok(PublicKey::from_secret_key(&excess))
     }
 
     // -----------------------------------------------------------------------------------------------------------------

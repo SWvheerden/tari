@@ -134,7 +134,7 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
         txo_type: TxoType,
     ) -> Result<Signature, TransactionError>;
 
-    async fn get_partial_kernel_signature_excess(
+    async fn get_partial_kernel_signature_excess_with_offset(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         nonce: &KeyId<PublicKey>,

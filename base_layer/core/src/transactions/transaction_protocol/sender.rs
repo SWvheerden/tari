@@ -384,7 +384,7 @@ impl SenderTransactionProtocol {
                     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&input.kernel_nonce).await?;
                     public_excess = public_excess -
                         key_manager
-                            .get_partial_kernel_signature_excess(&input.output.spending_key_id, &input.kernel_nonce)
+                            .get_partial_kernel_signature_excess_with_offset(&input.output.spending_key_id, &input.kernel_nonce)
                             .await?;
                 }
                 for output in &info.outputs {
@@ -392,7 +392,7 @@ impl SenderTransactionProtocol {
                     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&output.kernel_nonce).await?;
                     public_excess = public_excess +
                         key_manager
-                            .get_partial_kernel_signature_excess(&output.output.spending_key_id, &output.kernel_nonce)
+                            .get_partial_kernel_signature_excess_with_offset(&output.output.spending_key_id, &output.kernel_nonce)
                             .await?;
                 }
 
@@ -401,7 +401,7 @@ impl SenderTransactionProtocol {
                 //     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&change.kernel_nonce).await?;
                 //     public_excess = public_excess +
                 //         key_manager
-                //             .get_partial_kernel_signature_excess(&change.output.spending_key_id,
+                //             .get_partial_kernel_signature_excess_with_offset(&change.output.spending_key_id,
                 // &change.kernel_nonce)             .await?;
                 // }
                 let sender_offset_public_key = key_manager
@@ -410,6 +410,7 @@ impl SenderTransactionProtocol {
                 // we update this as we send this to what we sent.
                 info.total_sender_excess = public_excess.clone();
                 info.total_sender_nonce = public_nonce.clone();
+
 
                 let ephemeral_public_nonce = key_manager
                     .get_public_key_at_key_id(&ephemeral_public_key_nonce)
@@ -575,6 +576,7 @@ impl SenderTransactionProtocol {
                 .ok_or(TPE::IncompleteStateError("Missing sender offset key id".to_string()))?;
             sender_offset_keys.push(sender_offset_key_id);
         }
+
         if let Some(recipient_data) = &info.recipient_data {
             dbg!("recip");
             sender_offset_keys.push(recipient_data.recipient_sender_offset_key_id.clone());
@@ -620,7 +622,7 @@ impl SenderTransactionProtocol {
             .with_lock_height(info.metadata.lock_height)
             .with_burn_commitment(info.metadata.burn_commitment.clone())
             .with_excess(&excess)
-            .with_signature(&signature)
+            .with_signature(signature)
             .build()?;
         tx_builder.with_kernel(kernel);
         tx_builder.build().map_err(TPE::from)

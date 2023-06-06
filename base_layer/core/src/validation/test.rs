@@ -185,7 +185,7 @@ fn chain_balance_validation() {
     let (pk, sig) = create_random_signature_from_s_key(coinbase_key, 0.into(), 0, KernelFeatures::create_coinbase());
     let excess = Commitment::from_public_key(&pk);
     let kernel = KernelBuilder::new()
-        .with_signature(&sig)
+        .with_signature(sig)
         .with_excess(&excess)
         .with_features(KernelFeatures::COINBASE_KERNEL)
         .build()
@@ -237,7 +237,7 @@ fn chain_balance_validation() {
     let (pk, sig) = create_random_signature_from_s_key(key, 0.into(), 0, KernelFeatures::create_coinbase());
     let excess = Commitment::from_public_key(&pk);
     let kernel = KernelBuilder::new()
-        .with_signature(&sig)
+        .with_signature(sig)
         .with_excess(&excess)
         .with_features(KernelFeatures::COINBASE_KERNEL)
         .build()
@@ -340,7 +340,7 @@ fn chain_balance_validation_burned() {
     let (pk, sig) = create_random_signature_from_s_key(coinbase_key, 0.into(), 0, KernelFeatures::create_coinbase());
     let excess = Commitment::from_public_key(&pk);
     let kernel = KernelBuilder::new()
-        .with_signature(&sig)
+        .with_signature(sig)
         .with_excess(&excess)
         .with_features(KernelFeatures::COINBASE_KERNEL)
         .build()
@@ -358,7 +358,7 @@ fn chain_balance_validation_burned() {
     let (pk2, sig2) = create_random_signature_from_s_key(burned_key, 0.into(), 0, KernelFeatures::create_burn());
     let excess2 = Commitment::from_public_key(&pk2);
     let kernel2 = KernelBuilder::new()
-        .with_signature(&sig2)
+        .with_signature(sig2)
         .with_excess(&excess2)
         .with_features(KernelFeatures::create_burn())
         .with_burn_commitment(Some(burned.commitment.clone()))

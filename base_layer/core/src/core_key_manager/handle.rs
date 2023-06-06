@@ -321,7 +321,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             .await
     }
 
-    async fn get_partial_kernel_signature_excess(
+    async fn get_partial_kernel_signature_excess_with_offset(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         nonce_id: &KeyId<PublicKey>,
@@ -329,7 +329,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         (*self.core_key_manager_inner)
             .read()
             .await
-            .get_partial_kernel_signature_excess(spend_key_id, nonce_id)
+            .get_partial_kernel_signature_excess_with_offset(spend_key_id, nonce_id)
             .await
     }
 

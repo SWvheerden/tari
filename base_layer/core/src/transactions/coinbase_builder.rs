@@ -21,6 +21,7 @@
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
+use tari_utilities::ByteArray;
 use tari_common_types::types::{Commitment, PrivateKey, PublicKey};
 use tari_key_manager::key_manager_service::{KeyId, KeyManagerServiceError};
 use tari_script::{inputs, script, TariScript};
@@ -229,8 +230,8 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
                 TxoType::Output,
             )
             .await?;
-        let excess_public_key = self.key_manager.get_public_key_at_key_id(&spending_key_id).await?;
-        let excess = Commitment::from_public_key(&excess_public_key);
+
+        let excess = Commitment::from_public_key(&public_spend_key);
         // generate tx details
         let value: u64 = total_reward.into();
         let output_features = OutputFeatures::create_coinbase(height + constants.coinbase_lock_height(), self.extra);
@@ -322,7 +323,7 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
             .with_features(kernel_features)
             .with_lock_height(0)
             .with_excess(&excess)
-            .with_signature(&kernel_signature)
+            .with_signature(kernel_signature)
             .build()
             .map_err(|e| CoinbaseBuildError::BuildError(e.to_string()))?;
 
@@ -342,7 +343,9 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
 
 #[cfg(test)]
 mod test {
+    use tari_utilities::ByteArray;
     use tari_common::configuration::Network;
+    use tari_common_types::types::{Commitment, PrivateKey};
 
     use crate::{
         consensus::{emission::Emission, ConsensusManager, ConsensusManagerBuilder},
@@ -555,10 +558,12 @@ mod test {
         test_helpers::create_test_core_key_manager_with_memory_db,
         transactions::transaction_components::TransactionKernelVersion,
     };
+    use crate::core_key_manager::CoreKeyManagerBranch;
 
     #[tokio::test]
     #[allow(clippy::identity_op)]
     async fn invalid_coinbase_amount() {
+        //We construct two txs both valid with a single coinbase. We then add a duplicate coinbase utxo to the one, and a duplicate coinbase kernel to the other one.
         let (builder, rules, factories, key_manager) = get_builder();
         let p = TestParams::new(&key_manager).await;
         // We just want some small amount here.
@@ -572,12 +577,14 @@ mod test {
             .build(rules.consensus_constants(0), rules.emission_schedule())
             .await
             .unwrap();
+
+//we calculate a duplicate tx here so that we can have a coinbase with the correct fee amount
         let block_reward = rules.emission_schedule().block_reward(42) + missing_fee;
         let builder = CoinbaseBuilder::new(key_manager.clone());
         let builder = builder
             .with_block_height(4200000)
             .with_fees(1 * uT)
-            .with_spend_key_id(p.spend_key)
+            .with_spend_key_id(p.spend_key.clone())
             .with_script_key_id(p.script_private_key);
         let (tx2, output) = builder
             .build(rules.consensus_constants(0), rules.emission_schedule())
@@ -585,41 +592,50 @@ mod test {
             .unwrap();
         let mut tx_kernel_test = tx.clone();
 
-        // let add duplicate coinbase flagged utxo
+        // let add duplicate coinbase flagged utxo with missing amount
         let coinbase2 = tx2.body.outputs()[0].clone();
+        assert!(coinbase2.is_coinbase());
         let mut coinbase_kernel2 = tx2.body.kernels()[0].clone();
+        assert!(coinbase_kernel2.is_coinbase());
         coinbase_kernel2.features = KernelFeatures::empty();
-        let p2 = TestParams::new(&key_manager).await;
+        let new_nonce = key_manager.get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key()).await.unwrap();
         let kernel_message = TransactionKernel::build_kernel_signature_message(
             &TransactionKernelVersion::get_current_version(),
             coinbase_kernel2.fee,
             coinbase_kernel2.lock_height,
-            &KernelFeatures::empty(),
+            &coinbase_kernel2.features,
             &None,
         );
         let excess = key_manager
-            .get_public_key_at_key_id(&output.spending_key_id)
+            .get_partial_kernel_signature_excess_with_offset(&output.spending_key_id, &new_nonce)
             .await
             .unwrap();
-        let nonce = key_manager.get_public_key_at_key_id(&p2.kernel_nonce).await.unwrap();
+        let nonce = key_manager.get_public_key_at_key_id(&new_nonce).await.unwrap();
         let sig = key_manager
             .get_partial_kernel_signature(
                 &output.spending_key_id,
-                &p2.kernel_nonce,
+                &new_nonce,
                 &nonce,
                 &excess,
                 &TransactionKernelVersion::get_current_version(),
                 &kernel_message,
-                &KernelFeatures::empty(),
+                &coinbase_kernel2.features,
                 TxoType::Output,
             )
             .await
             .unwrap();
+        //we verify that the created signature is correct
+        let offset = key_manager.get_partial_private_kernel_offset(&output.spending_key_id, &new_nonce).await.unwrap();
+        let sig_challenge = TransactionKernel::finalize_kernel_signature_challenge(&TransactionKernelVersion::get_current_version(), &nonce, &excess, &kernel_message);
+        assert!(sig.verify(&excess, &PrivateKey::from_bytes(&sig_challenge).unwrap()));
 
+        //we fix the signature and the excess with the now included offset.
         coinbase_kernel2.excess_sig = sig;
+        coinbase_kernel2.excess = Commitment::from_public_key(&excess);
 
         tx.body.add_output(coinbase2);
         tx.body.add_kernel(coinbase_kernel2);
+        tx.offset = tx.offset + offset;
         tx.body.sort();
 
         // lets add duplciate coinbase kernel

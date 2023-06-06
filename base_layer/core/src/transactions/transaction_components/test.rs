@@ -264,7 +264,7 @@ fn kernel_hash() {
     let sig = Signature::new(r, s);
     let excess = Commitment::from_hex("9017be5092b85856ce71061cadeb20c2d1fabdf664c4b3f082bf44cf5065e650").unwrap();
     let k = KernelBuilder::new()
-        .with_signature(&sig)
+        .with_signature(sig)
         .with_fee(100.into())
         .with_excess(&excess)
         .with_lock_height(500)
@@ -283,7 +283,7 @@ fn kernel_metadata() {
     let sig = Signature::new(r, s);
     let excess = Commitment::from_hex("e0bd3f743b566272277c357075b0584fc840d79efac49e9b3b6dbaa8a351bc0c").unwrap();
     let k = KernelBuilder::new()
-        .with_signature(&sig)
+        .with_signature(sig)
         .with_fee(100.into())
         .with_excess(&excess)
         .with_lock_height(500)
