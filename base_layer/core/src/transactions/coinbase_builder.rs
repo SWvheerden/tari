@@ -241,7 +241,7 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
         let minimum_value_promise = MicroTari::zero();
 
         let output_version = TransactionOutputVersion::get_current_version();
-        let metadata_message = TransactionOutput::build_metadata_signature_message(
+        let metadata_message = TransactionOutput::metadata_signature_message_from_parts(
             &output_version,
             &script,
             &output_features,

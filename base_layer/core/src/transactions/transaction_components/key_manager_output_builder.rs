@@ -161,7 +161,7 @@ impl KeyManagerOutputBuilder {
         let sender_offset_public_key = key_manager
             .get_public_key_at_key_id(sender_offset_private_key_id)
             .await?;
-        let metadata_message = TransactionOutput::build_metadata_signature_message(
+        let metadata_message = TransactionOutput::metadata_signature_message_from_parts(
             &self.version,
             &script,
             &self.features,
@@ -321,46 +321,55 @@ mod test {
             .await
             .unwrap();
         match kmob.clone().try_build() {
-            Ok(val) => {
-                let mut output = val.as_transaction_output(&key_manager).await.unwrap();
+            Ok(key_manager_output) => {
+                let mut output = key_manager_output.as_transaction_output(&key_manager).await.unwrap();
                 assert!(output.verify_metadata_signature().is_ok());
+
                 // Now we can swap out the metadata signature for one built from partial sender and receiver signatures
-                let ephemeral_commitment_nonce_id = key_manager
-                    .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-                    .await
-                    .unwrap();
                 let ephemeral_pubkey_id = key_manager
                     .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-                    .await
-                    .unwrap();
-                let ephemeral_commitment_nonce = key_manager
-                    .get_metadata_signature_ephemeral_commitment(
-                        &ephemeral_commitment_nonce_id,
-                        val.features.range_proof_type,
-                    )
                     .await
                     .unwrap();
                 let ephemeral_pubkey = key_manager
                     .get_public_key_at_key_id(&ephemeral_pubkey_id)
                     .await
                     .unwrap();
-                let receiver_metadata_signature = TransactionOutput::sign_metadata_signature_as_receiver_with_key_id(
-                    &val,
-                    &key_manager,
-                    Some(&ephemeral_commitment_nonce_id),
-                    &ephemeral_pubkey,
-                )
-                .await
-                .unwrap();
-                let sender_metadata_signature = TransactionOutput::sign_metadata_signature_as_sender_with_key_id(
-                    &val,
-                    &key_manager,
-                    &ephemeral_commitment_nonce,
-                    Some(&ephemeral_pubkey_id),
-                    &sender_offset_private_key_id,
-                )
-                .await
-                .unwrap();
+                let metadata_message = TransactionOutput::metadata_signature_message(&key_manager_output);
+
+                let ephemeral_commitment_nonce_id = key_manager
+                    .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+                    .await
+                    .unwrap();
+                let receiver_metadata_signature = key_manager
+                    .get_receiver_partial_metadata_signature(
+                        &key_manager_output.spending_key_id,
+                        &key_manager_output.value.into(),
+                        &ephemeral_commitment_nonce_id,
+                        &key_manager_output.sender_offset_public_key,
+                        &ephemeral_pubkey,
+                        &key_manager_output.version,
+                        &metadata_message,
+                        key_manager_output.features.range_proof_type,
+                    )
+                    .await
+                    .unwrap();
+
+                let commitment = key_manager
+                    .get_commitment(&key_manager_output.spending_key_id, &key_manager_output.value.into())
+                    .await
+                    .unwrap();
+                let sender_metadata_signature = key_manager
+                    .get_sender_partial_metadata_signature(
+                        &ephemeral_pubkey_id,
+                        &sender_offset_private_key_id,
+                        &commitment,
+                        &receiver_metadata_signature.ephemeral_commitment(),
+                        &key_manager_output.version,
+                        &metadata_message,
+                    )
+                    .await
+                    .unwrap();
+
                 let metadata_signature_from_partials = &receiver_metadata_signature + &sender_metadata_signature;
                 assert_ne!(output.metadata_signature, metadata_signature_from_partials);
                 output.metadata_signature = metadata_signature_from_partials;

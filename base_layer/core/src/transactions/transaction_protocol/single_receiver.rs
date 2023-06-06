@@ -116,6 +116,7 @@ mod test {
     use tari_script::{script, ExecutionStack, TariScript};
 
     use crate::{
+        core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch},
         covenants::Covenant,
         test_helpers::create_test_core_key_manager_with_memory_db,
         transactions::{
@@ -221,14 +222,25 @@ mod test {
             EncryptedData::default(),
             0.into(),
         );
-        bob_output.metadata_signature = TransactionOutput::sign_metadata_signature_as_receiver_with_key_id(
-            &bob_output,
-            &key_manager,
-            None,
-            &ephemeral_public_nonce,
-        )
-        .await
-        .unwrap();
+        let metadata_message = TransactionOutput::metadata_signature_message(&bob_output);
+        let ephemeral_commitment_nonce_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await
+            .unwrap();
+        bob_output.metadata_signature = key_manager
+            .get_receiver_partial_metadata_signature(
+                &bob_output.spending_key_id,
+                &bob_output.value.into(),
+                &ephemeral_commitment_nonce_id,
+                &bob_output.sender_offset_public_key,
+                &ephemeral_public_nonce,
+                &bob_output.version,
+                &metadata_message,
+                bob_output.features.range_proof_type,
+            )
+            .await
+            .unwrap();
+
         let prot = SingleReceiverTransactionProtocol::create(&info, bob_output, &key_manager)
             .await
             .unwrap();
