@@ -128,14 +128,21 @@ async fn test_base_node_wallet_rpc() {
     let (service, _, mut base_node, request_mock, consensus_manager, block0, utxo0, _temp_dir, key_manager) =
         setup().await;
 
-    let (txs1, utxos1) = schema_to_transaction(&[txn_schema!(from: vec![utxo0.clone()], to: vec![1 * T, 1 * T])], &key_manager).await;
+    let (txs1, utxos1) = schema_to_transaction(
+        &[txn_schema!(from: vec![utxo0.clone()], to: vec![1 * T, 1 * T])],
+        &key_manager,
+    )
+    .await;
     let tx1 = (*txs1[0]).clone();
     let tx1_sig = tx1.first_kernel_excess_sig().unwrap().clone();
 
-    let (txs2, utxos2) = schema_to_transaction(&[txn_schema!(
-        from: vec![utxos1[0].clone()],
-        to: vec![400_000 * uT, 590_000 * uT]
-    )], &key_manager)
+    let (txs2, utxos2) = schema_to_transaction(
+        &[txn_schema!(
+            from: vec![utxos1[0].clone()],
+            to: vec![400_000 * uT, 590_000 * uT]
+        )],
+        &key_manager,
+    )
     .await;
     let tx2 = (*txs2[0]).clone();
     let tx2_sig = tx2.first_kernel_excess_sig().unwrap().clone();
@@ -200,7 +207,8 @@ async fn test_base_node_wallet_rpc() {
     assert_eq!(resp.rejection_reason, TxSubmissionRejectionReason::AlreadyMined);
 
     // Now create a different tx that uses the same input as Tx1 to produce a DoubleSpend rejection
-    let (txs1b, _utxos1) = schema_to_transaction(&[txn_schema!(from: vec![utxo0], to: vec![2 * T, 1 * T])], &key_manager).await;
+    let (txs1b, _utxos1) =
+        schema_to_transaction(&[txn_schema!(from: vec![utxo0], to: vec![2 * T, 1 * T])], &key_manager).await;
     let tx1b = (*txs1b[0]).clone();
 
     // Now if we submit Tx1 is should return as rejected as AlreadyMined
@@ -345,24 +353,33 @@ async fn test_sync_utxos_by_block() {
     let (service, _, mut base_node, request_mock, consensus_manager, block0, utxo0, _temp_dir, key_manager) =
         setup().await;
 
-    let (txs1, utxos1) = schema_to_transaction(&[txn_schema!(
-        from: vec![utxo0.clone()],
-        to: vec![10 * T, 10 * T, 10 * T, 10 * T, 10 * T, 10 * T, 10 * T, 10 * T, 10 * T]
-    )], &key_manager)
+    let (txs1, utxos1) = schema_to_transaction(
+        &[txn_schema!(
+            from: vec![utxo0.clone()],
+            to: vec![10 * T, 10 * T, 10 * T, 10 * T, 10 * T, 10 * T, 10 * T, 10 * T, 10 * T]
+        )],
+        &key_manager,
+    )
     .await;
     let tx1 = (*txs1[0]).clone();
 
-    let (txs2, utxos2) = schema_to_transaction(&[txn_schema!(
-        from: vec![utxos1[0].clone()],
-        to: vec![2 * T, 2 * T, 2 * T, 2 * T]
-    )], &key_manager)
+    let (txs2, utxos2) = schema_to_transaction(
+        &[txn_schema!(
+            from: vec![utxos1[0].clone()],
+            to: vec![2 * T, 2 * T, 2 * T, 2 * T]
+        )],
+        &key_manager,
+    )
     .await;
     let tx2 = (*txs2[0]).clone();
 
-    let (txs3, _utxos3) = schema_to_transaction(&[txn_schema!(
-        from: vec![utxos2[0].clone(), utxos2[1].clone()],
-        to: vec![100_000 * uT, 100_000 * uT, 100_000 * uT, 100_000 * uT, 100_000 * uT]
-    )], &key_manager)
+    let (txs3, _utxos3) = schema_to_transaction(
+        &[txn_schema!(
+            from: vec![utxos2[0].clone(), utxos2[1].clone()],
+            to: vec![100_000 * uT, 100_000 * uT, 100_000 * uT, 100_000 * uT, 100_000 * uT]
+        )],
+        &key_manager,
+    )
     .await;
     let tx3 = (*txs3[0]).clone();
 

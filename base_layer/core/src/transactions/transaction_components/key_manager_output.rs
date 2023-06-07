@@ -196,6 +196,12 @@ impl KeyManagerOutput {
         &self,
         key_manager: &KM,
     ) -> Result<TransactionOutput, TransactionError> {
+        if self.features.range_proof_type == RangeProofType::RevealedValue && self.minimum_value_promise != self.value {
+            return Err(TransactionError::InvalidRevealedValue(format!(
+                "Expected {}, received {}",
+                self.value, self.minimum_value_promise
+            )));
+        }
         let value = self.value.into();
         let commitment = key_manager.get_commitment(&self.spending_key_id, &value).await?;
         let proof = if self.features.range_proof_type == RangeProofType::BulletProofPlus {

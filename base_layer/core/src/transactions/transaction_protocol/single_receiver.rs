@@ -61,7 +61,7 @@ impl SingleReceiverTransactionProtocol {
             sender_info.metadata.clone()
         };
         let public_excess = key_manager
-            .get_partial_kernel_signature_excess_with_offset(&output.spending_key_id, &nonce_id)
+            .get_txo_kernel_signature_excess_with_offset(&output.spending_key_id, &nonce_id)
             .await?;
         let public_nonce = key_manager.get_public_key_at_key_id(&nonce_id).await?;
 
@@ -73,7 +73,7 @@ impl SingleReceiverTransactionProtocol {
             &tx_meta.burn_commitment,
         );
         let signature = key_manager
-            .get_partial_kernel_signature(
+            .get_txo_kernel_signature(
                 &output.spending_key_id,
                 &nonce_id,
                 &(&sender_info.public_nonce + &public_nonce),
@@ -85,7 +85,7 @@ impl SingleReceiverTransactionProtocol {
             )
             .await?;
         let offset = key_manager
-            .get_partial_private_kernel_offset(&output.spending_key_id, &nonce_id)
+            .get_txo_private_kernel_offset(&output.spending_key_id, &nonce_id)
             .await?;
 
         let data = RecipientSignedMessage {

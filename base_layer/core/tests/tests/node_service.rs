@@ -265,8 +265,11 @@ async fn propagate_and_forward_invalid_block_hash() {
     });
 
     // Add a transaction that Bob does not have to force a request
-    let (txs, _) =
-        schema_to_transaction(&[txn_schema!(from: vec![genesis_coinbase], to: vec![5 * T], fee: 5.into())],&key_manager).await;
+    let (txs, _) = schema_to_transaction(
+        &[txn_schema!(from: vec![genesis_coinbase], to: vec![5 * T], fee: 5.into())],
+        &key_manager,
+    )
+    .await;
     let txs = txs.into_iter().map(|tx| (*tx).clone()).collect();
     let block1 = append_block(&alice_node.blockchain_db, &block0, txs, &rules, 1.into(), &key_manager)
         .await
@@ -498,7 +501,7 @@ async fn local_get_new_block_template_and_get_new_block() {
         txn_schema!(from: vec![outputs[1].clone()], to: vec![10_000 * uT, 20_000 * uT]),
         txn_schema!(from: vec![outputs[2].clone()], to: vec![30_000 * uT, 40_000 * uT]),
     ];
-    let (txs, _) = schema_to_transaction(&schema,&key_manager).await;
+    let (txs, _) = schema_to_transaction(&schema, &key_manager).await;
     node.mempool.insert(txs[0].clone()).await.unwrap();
     node.mempool.insert(txs[1].clone()).await.unwrap();
 
@@ -558,11 +561,13 @@ async fn local_get_new_block_with_zero_conf() {
     );
 
     let (tx11, _) = spend_utxos(
-        txn_schema!(from: tx01_out, to: vec![10_000 * uT], fee: 50*uT, lock: 0, features: OutputFeatures::default()),&key_manager
+        txn_schema!(from: tx01_out, to: vec![10_000 * uT], fee: 50*uT, lock: 0, features: OutputFeatures::default()),
+        &key_manager,
     )
     .await;
     let (tx12, _) = spend_utxos(
-        txn_schema!(from: tx02_out, to: vec![20_000 * uT], fee: 60*uT, lock: 0, features: OutputFeatures::default()),&key_manager
+        txn_schema!(from: tx02_out, to: vec![20_000 * uT], fee: 60*uT, lock: 0, features: OutputFeatures::default()),
+        &key_manager,
     )
     .await;
     assert_eq!(
@@ -632,11 +637,13 @@ async fn local_get_new_block_with_combined_transaction() {
         txn_schema!(from: vec![outputs[2].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, features: OutputFeatures::default()),&key_manager
     ).await;
     let (tx11, _) = spend_utxos(
-        txn_schema!(from: tx01_out, to: vec![10_000 * uT], fee: 50*uT, lock: 0, features: OutputFeatures::default()),&key_manager
+        txn_schema!(from: tx01_out, to: vec![10_000 * uT], fee: 50*uT, lock: 0, features: OutputFeatures::default()),
+        &key_manager,
     )
     .await;
     let (tx12, _) = spend_utxos(
-        txn_schema!(from: tx02_out, to: vec![20_000 * uT], fee: 60*uT, lock: 0, features: OutputFeatures::default()),&key_manager
+        txn_schema!(from: tx02_out, to: vec![20_000 * uT], fee: 60*uT, lock: 0, features: OutputFeatures::default()),
+        &key_manager,
     )
     .await;
 

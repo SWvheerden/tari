@@ -70,12 +70,15 @@ async fn check_block_changes_are_detected(field: MerkleMountainRangeField, block
         .add_block(blocks.new_block("A1").child_of("GB").difficulty(1))
         .await;
 
-    let (txs, _) = schema_to_transaction(&[txn_schema!(
-        from: vec![output],
-        to: vec![50 * T],
-        input_version: TransactionInputVersion::V0,
-        output_version: TransactionOutputVersion::V0
-    )], &blockchain.key_manager)
+    let (txs, _) = schema_to_transaction(
+        &[txn_schema!(
+            from: vec![output],
+            to: vec![50 * T],
+            input_version: TransactionInputVersion::V0,
+            output_version: TransactionOutputVersion::V0
+        )],
+        &blockchain.key_manager,
+    )
     .await;
     blockchain
         .add_block(

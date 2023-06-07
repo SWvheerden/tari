@@ -291,13 +291,13 @@ mod test {
         );
         let p_nonce = key_manager.get_public_key_at_key_id(&nonce_id).await.unwrap();
         let p_spend_key = key_manager
-            .get_partial_kernel_signature_excess_with_offset(&receiver_test_params.spend_key, &nonce_id)
+            .get_txo_kernel_signature_excess_with_offset(&receiver_test_params.spend_key, &nonce_id)
             .await
             .unwrap();
         let r_sum = &msg.public_nonce + &p_nonce;
         let excess = &msg.public_excess + &p_spend_key;
         let kernel_signature = key_manager
-            .get_partial_kernel_signature(
+            .get_txo_kernel_signature(
                 &receiver_test_params.spend_key,
                 &nonce_id,
                 &r_sum,

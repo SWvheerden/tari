@@ -410,7 +410,9 @@ impl SenderTransactionProtocol {
                 //             )
                 //             .await?;
                 // }
-                let (public_nonce, public_excess) = SenderTransactionProtocol::calculate_total_nonce_and_total_public_excess(&info, key_manager).await?;
+                let (public_nonce, public_excess) =
+                    SenderTransactionProtocol::calculate_total_nonce_and_total_public_excess(&info, key_manager)
+                        .await?;
                 let sender_offset_public_key = key_manager
                     .get_public_key_at_key_id(&recipient_script_offset_secret_key_id)
                     .await?;
@@ -440,7 +442,11 @@ impl SenderTransactionProtocol {
             _ => Err(TPE::InvalidStateError),
         }
     }
-    async fn calculate_total_nonce_and_total_public_excess<KM: BaseLayerKeyManagerInterface>(info: &RawTransactionInfo, key_manager: &KM) -> Result<(PublicKey, PublicKey),TPE>{
+
+    async fn calculate_total_nonce_and_total_public_excess<KM: BaseLayerKeyManagerInterface>(
+        info: &RawTransactionInfo,
+        key_manager: &KM,
+    ) -> Result<(PublicKey, PublicKey), TPE> {
         // lets calculate the total sender kernel signature nonce
         let mut public_nonce = PublicKey::default();
         // lets calculate the total sender kernel exess
@@ -449,20 +455,14 @@ impl SenderTransactionProtocol {
             public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&input.kernel_nonce).await?;
             public_excess = public_excess -
                 key_manager
-                    .get_partial_kernel_signature_excess_with_offset(
-                        &input.output.spending_key_id,
-                        &input.kernel_nonce,
-                    )
+                    .get_txo_kernel_signature_excess_with_offset(&input.output.spending_key_id, &input.kernel_nonce)
                     .await?;
         }
         for output in &info.outputs {
             public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&output.kernel_nonce).await?;
             public_excess = public_excess +
                 key_manager
-                    .get_partial_kernel_signature_excess_with_offset(
-                        &output.output.spending_key_id,
-                        &output.kernel_nonce,
-                    )
+                    .get_txo_kernel_signature_excess_with_offset(&output.output.spending_key_id, &output.kernel_nonce)
                     .await?;
         }
 
@@ -470,10 +470,7 @@ impl SenderTransactionProtocol {
             public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&change.kernel_nonce).await?;
             public_excess = public_excess +
                 key_manager
-                    .get_partial_kernel_signature_excess_with_offset(
-                        &change.output.spending_key_id,
-                        &change.kernel_nonce,
-                    )
+                    .get_txo_kernel_signature_excess_with_offset(&change.output.spending_key_id, &change.kernel_nonce)
                     .await?;
         }
         Ok((public_nonce, public_excess))
@@ -556,12 +553,12 @@ impl SenderTransactionProtocol {
         key_manager: &KM,
     ) -> Result<Transaction, TPE> {
         let mut tx_builder = TransactionBuilder::new();
-        let (total_public_nonce, total_public_excess) =  if info.recipient_data.is_none(){
-            //we dont have a recipient and thus we have not yet calculated the sender_nonce and sender_offset_excess
+        let (total_public_nonce, total_public_excess) = if info.recipient_data.is_none() {
+            // we dont have a recipient and thus we have not yet calculated the sender_nonce and sender_offset_excess
             SenderTransactionProtocol::calculate_total_nonce_and_total_public_excess(&info, key_manager).await?
-
         } else {
-            let total_public_nonce = &info.total_sender_nonce + info.recipient_partial_kernel_signature.get_public_nonce();
+            let total_public_nonce =
+                &info.total_sender_nonce + info.recipient_partial_kernel_signature.get_public_nonce();
             let total_public_excess = &info.total_sender_excess + &info.recipient_partial_kernel_excess;
             (total_public_nonce, total_public_excess)
         };
@@ -583,7 +580,7 @@ impl SenderTransactionProtocol {
             tx_builder.add_input(input.output.as_transaction_input(key_manager).await?);
             signature = &signature +
                 &key_manager
-                    .get_partial_kernel_signature(
+                    .get_txo_kernel_signature(
                         &input.output.spending_key_id,
                         &input.kernel_nonce,
                         &total_public_nonce,
@@ -596,7 +593,7 @@ impl SenderTransactionProtocol {
                     .await?;
             offset = offset -
                 &key_manager
-                    .get_partial_private_kernel_offset(&input.output.spending_key_id, &input.kernel_nonce)
+                    .get_txo_private_kernel_offset(&input.output.spending_key_id, &input.kernel_nonce)
                     .await?;
             script_keys.push(input.output.script_private_key_id.clone());
             // let sig = key_manager
@@ -627,7 +624,7 @@ impl SenderTransactionProtocol {
             tx_builder.add_output(output.output.as_transaction_output(key_manager).await?);
             signature = &signature +
                 &key_manager
-                    .get_partial_kernel_signature(
+                    .get_txo_kernel_signature(
                         &output.output.spending_key_id,
                         &output.kernel_nonce,
                         &total_public_nonce,
@@ -640,7 +637,7 @@ impl SenderTransactionProtocol {
                     .await?;
             offset = offset +
                 &key_manager
-                    .get_partial_private_kernel_offset(&output.output.spending_key_id, &output.kernel_nonce)
+                    .get_txo_private_kernel_offset(&output.output.spending_key_id, &output.kernel_nonce)
                     .await?;
             let sender_offset_key_id = output
                 .sender_offset_key_id
@@ -656,7 +653,7 @@ impl SenderTransactionProtocol {
             tx_builder.add_output(change.output.as_transaction_output(key_manager).await?);
             signature = &signature +
                 &key_manager
-                    .get_partial_kernel_signature(
+                    .get_txo_kernel_signature(
                         &change.output.spending_key_id,
                         &change.kernel_nonce,
                         &total_public_nonce,
@@ -669,7 +666,7 @@ impl SenderTransactionProtocol {
                     .await?;
             offset = offset +
                 &key_manager
-                    .get_partial_private_kernel_offset(&change.output.spending_key_id, &change.kernel_nonce)
+                    .get_txo_private_kernel_offset(&change.output.spending_key_id, &change.kernel_nonce)
                     .await?;
             let sender_offset_key_id = change
                 .sender_offset_key_id
@@ -867,15 +864,8 @@ impl fmt::Display for SenderState {
 
 #[cfg(test)]
 mod test {
-    use rand::rngs::OsRng;
-    use tari_common_types::types::{CommitmentFactory, PrivateKey, PublicKey, RangeProof};
-    use tari_crypto::{
-        commitment::HomomorphicCommitmentFactory,
-        keys::{PublicKey as PublicKeyTrait, SecretKey as SecretKeyTrait},
-        range_proof::RangeProofService,
-        signatures::CommitmentAndPublicKeySignature,
-        tari_utilities::ByteArray,
-    };
+    use tari_common_types::types::PrivateKey;
+    use tari_crypto::signatures::CommitmentAndPublicKeySignature;
     use tari_key_manager::key_manager_service::KeyManagerInterface;
     use tari_script::{inputs, script, ExecutionStack, TariScript};
     use tari_utilities::hex::Hex;
@@ -961,58 +951,83 @@ mod test {
         );
     }
 
-    #[test]
-    fn test_metadata_signature_finalize() {
+    #[tokio::test]
+    async fn test_metadata_signature_finalize() {
         // Defaults
-        let commitment_factory = CommitmentFactory::default();
-        let crypto_factory = CryptoFactories::default();
+        let key_manager = create_test_core_key_manager_with_memory_db();
 
         // Sender data
-        let ephemeral_private_nonce = PrivateKey::random(&mut OsRng);
-        let sender_ephemeral_public_nonce = PublicKey::from_secret_key(&ephemeral_private_nonce);
+        let ephemeral_pubkey_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await
+            .unwrap();
+        let ephemeral_pubkey = key_manager
+            .get_public_key_at_key_id(&ephemeral_pubkey_id)
+            .await
+            .unwrap();
         let value = 1000u64;
-        let sender_offset_private_key = PrivateKey::random(&mut OsRng);
-        let sender_offset_public_key = PublicKey::from_secret_key(&sender_offset_private_key);
+        let sender_offset_key_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await
+            .unwrap();
+        let sender_offset_public_key = key_manager
+            .get_public_key_at_key_id(&sender_offset_key_id)
+            .await
+            .unwrap();
+        let txo_version = TransactionOutputVersion::get_current_version();
 
         // Shared contract data
         let script = Default::default();
         let output_features = Default::default();
 
         // Receiver data
-        let spending_key = PrivateKey::random(&mut OsRng);
-        let commitment = commitment_factory.commit(&spending_key, &PrivateKey::from(value));
-        let proof = RangeProof::from_bytes(
-            &crypto_factory
-                .range_proof
-                .construct_proof(&spending_key, value)
-                .unwrap(),
-        )
-        .unwrap();
+        let (spending_key_id, _script_key_id) = key_manager.get_next_spend_and_script_key_ids().await.unwrap();
+        let commitment = key_manager
+            .get_commitment(&spending_key_id, &PrivateKey::from(value))
+            .await
+            .unwrap();
+        let minimum_value_promise = MicroTari::zero();
+        let proof = key_manager
+            .construct_range_proof(&spending_key_id, value, minimum_value_promise.into())
+            .await
+            .unwrap();
         let covenant = Covenant::default();
 
         // Encrypted value
-        let encryption_key = PrivateKey::random(&mut OsRng);
-        let encrypted_data =
-            EncryptedData::encrypt_data(&encryption_key, &commitment, value.into(), &spending_key).unwrap();
+        let encrypted_data = key_manager
+            .encrypt_data_for_recovery(&spending_key_id, &None, value)
+            .await
+            .unwrap();
 
-        let minimum_value_promise = MicroTari::zero();
-
-        let partial_metadata_signature = TransactionOutput::create_receiver_partial_metadata_signature(
-            TransactionOutputVersion::get_current_version(),
-            value.into(),
-            &spending_key,
+        let metadata_message = TransactionOutput::metadata_signature_message_from_parts(
+            &txo_version,
             &script,
             &output_features,
-            &sender_offset_public_key,
-            &sender_ephemeral_public_nonce,
             &covenant,
             &encrypted_data,
             minimum_value_promise,
-        )
-        .unwrap();
+        );
+
+        let ephemeral_commitment_nonce_id = key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await
+            .unwrap();
+        let partial_metadata_signature = key_manager
+            .get_receiver_partial_metadata_signature(
+                &spending_key_id,
+                &value.into(),
+                &ephemeral_commitment_nonce_id,
+                &sender_offset_public_key,
+                &ephemeral_pubkey,
+                &txo_version,
+                &metadata_message,
+                output_features.range_proof_type,
+            )
+            .await
+            .unwrap();
 
         let mut output = TransactionOutput::new_current_version(
-            Default::default(),
+            output_features,
             commitment,
             Some(proof),
             script.clone(),
@@ -1025,19 +1040,17 @@ mod test {
         assert!(output.verify_metadata_signature().is_err());
 
         // Sender finalize transaction output
-        let partial_sender_metadata_signature = TransactionOutput::create_sender_partial_metadata_signature(
-            TransactionOutputVersion::get_current_version(),
-            &output.commitment,
-            partial_metadata_signature.ephemeral_commitment(),
-            &script,
-            &output_features,
-            &sender_offset_private_key,
-            Some(&ephemeral_private_nonce),
-            &covenant,
-            &encrypted_data,
-            minimum_value_promise,
-        )
-        .unwrap();
+        let partial_sender_metadata_signature = key_manager
+            .get_sender_partial_metadata_signature(
+                &ephemeral_pubkey_id,
+                &sender_offset_key_id,
+                &output.commitment,
+                &partial_metadata_signature.ephemeral_commitment(),
+                &txo_version,
+                &metadata_message,
+            )
+            .await
+            .unwrap();
         output.metadata_signature = &partial_metadata_signature + &partial_sender_metadata_signature;
         assert!(output.verify_metadata_signature().is_ok());
     }

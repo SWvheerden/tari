@@ -218,7 +218,7 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
 
         let kernel_signature = self
             .key_manager
-            .get_partial_kernel_signature(
+            .get_txo_kernel_signature(
                 &spending_key_id,
                 &public_nonce_id,
                 &public_nonce,
@@ -609,12 +609,12 @@ mod test {
             &None,
         );
         let excess = key_manager
-            .get_partial_kernel_signature_excess_with_offset(&output.spending_key_id, &new_nonce)
+            .get_txo_kernel_signature_excess_with_offset(&output.spending_key_id, &new_nonce)
             .await
             .unwrap();
         let nonce = key_manager.get_public_key_at_key_id(&new_nonce).await.unwrap();
         let sig = key_manager
-            .get_partial_kernel_signature(
+            .get_txo_kernel_signature(
                 &output.spending_key_id,
                 &new_nonce,
                 &nonce,
@@ -628,7 +628,7 @@ mod test {
             .unwrap();
         // we verify that the created signature is correct
         let offset = key_manager
-            .get_partial_private_kernel_offset(&output.spending_key_id, &new_nonce)
+            .get_txo_private_kernel_offset(&output.spending_key_id, &new_nonce)
             .await
             .unwrap();
         let sig_challenge = TransactionKernel::finalize_kernel_signature_challenge(

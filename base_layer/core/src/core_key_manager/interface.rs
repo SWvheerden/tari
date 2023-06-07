@@ -118,11 +118,11 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
         script_key_id: &KeyId<PublicKey>,
         spend_key_id: &KeyId<PublicKey>,
         value: &PrivateKey,
-        tx_version: &TransactionInputVersion,
+        txi_version: &TransactionInputVersion,
         script_message: &[u8; 32],
     ) -> Result<ComAndPubSignature, TransactionError>;
 
-    async fn get_partial_kernel_signature(
+    async fn get_txo_kernel_signature(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         nonce_id: &KeyId<PublicKey>,
@@ -134,13 +134,13 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
         txo_type: TxoType,
     ) -> Result<Signature, TransactionError>;
 
-    async fn get_partial_kernel_signature_excess_with_offset(
+    async fn get_txo_kernel_signature_excess_with_offset(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         nonce: &KeyId<PublicKey>,
     ) -> Result<PublicKey, TransactionError>;
 
-    async fn get_partial_private_kernel_offset(
+    async fn get_txo_private_kernel_offset(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         nonce_id: &KeyId<PublicKey>,
@@ -181,7 +181,7 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
         sender_offset_key_id: &KeyId<PublicKey>,
         ephemeral_pubkey: &PublicKey,
         ephemeral_commitment: &Commitment,
-        tx_version: &TransactionOutputVersion,
+        txo_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
         range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError>;
@@ -193,7 +193,7 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
         ephemeral_commitment_nonce_id: &KeyId<PublicKey>,
         sender_offset_public_key: &PublicKey,
         ephemeral_pubkey: &PublicKey,
-        tx_version: &TransactionOutputVersion,
+        txo_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
         range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError>;
@@ -204,7 +204,7 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
         sender_offset_key_id: &KeyId<PublicKey>,
         commitment: &Commitment,
         ephemeral_commitment: &Commitment,
-        tx_version: &TransactionOutputVersion,
+        txo_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
     ) -> Result<ComAndPubSignature, TransactionError>;
 }

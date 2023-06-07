@@ -126,13 +126,14 @@ pub async fn create_block(
         branch: CoreKeyManagerBranch::Coinbase.get_branch_key(),
         index: block_height,
     };
-    let (coinbase, coinbase_output) =
-        CoinbaseBuilder::new(km.clone())
-            .with_block_height(header.height)
-            .with_fees(0.into())
-            .with_spend_key_id(spend_key_id.clone())
-            .with_script_key_id(spend_key_id)
-            .build_with_reward(rules.consensus_constants(block_height), reward).await.unwrap();
+    let (coinbase, coinbase_output) = CoinbaseBuilder::new(km.clone())
+        .with_block_height(header.height)
+        .with_fees(0.into())
+        .with_spend_key_id(spend_key_id.clone())
+        .with_script_key_id(spend_key_id)
+        .build_with_reward(rules.consensus_constants(block_height), reward)
+        .await
+        .unwrap();
 
     let mut block = header
         .into_builder()

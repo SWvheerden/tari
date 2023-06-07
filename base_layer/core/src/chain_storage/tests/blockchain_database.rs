@@ -31,6 +31,7 @@ use crate::{
         create_block,
         create_test_core_key_manager_with_memory_db,
         BlockSpec,
+        TestKeyManager,
     },
     transactions::{
         tari_amount::T,
@@ -39,7 +40,6 @@ use crate::{
     },
     txn_schema,
 };
-use crate::test_helpers::TestKeyManager;
 
 fn setup() -> BlockchainDatabase<TempDatabase> {
     create_new_blockchain()
@@ -49,7 +49,7 @@ async fn create_next_block(
     db: &BlockchainDatabase<TempDatabase>,
     prev_block: &Block,
     transactions: Vec<Arc<Transaction>>,
-    key_manager : &TestKeyManager
+    key_manager: &TestKeyManager,
 ) -> (Arc<Block>, KeyManagerOutput) {
     let rules = db.rules();
     let (block, output) = create_block(
@@ -59,7 +59,8 @@ async fn create_next_block(
             .with_transactions(transactions.into_iter().map(|t| (*t).clone()).collect())
             .finish(),
         key_manager,
-    ).await;
+    )
+    .await;
     let block = apply_mmr_to_block(db, block);
     (Arc::new(block), output)
 }
@@ -79,7 +80,7 @@ fn apply_mmr_to_block(db: &BlockchainDatabase<TempDatabase>, block: Block) -> Bl
 async fn add_many_chained_blocks(
     size: usize,
     db: &BlockchainDatabase<TempDatabase>,
-    key_manager: &TestKeyManager
+    key_manager: &TestKeyManager,
 ) -> (Vec<Arc<Block>>, Vec<KeyManagerOutput>) {
     let last_header = db.fetch_last_header().unwrap();
     let mut prev_block = db
@@ -522,11 +523,21 @@ mod fetch_header_containing_kernel_mmr {
         let key_manager = create_test_core_key_manager_with_memory_db();
         let (blocks, outputs) = add_many_chained_blocks(1, &db, &key_manager).await;
         let num_genesis_kernels = genesis.block().body.kernels().len() as u64;
+<<<<<<< HEAD
         let (txns, _) = schema_to_transaction(&[txn_schema!(from: vec![outputs[0].clone()], to: vec![50 * T])], &key_manager).await;
+=======
+        dbg!("hie");
+        let key_manager = create_test_core_key_manager_with_memory_db();
+        let (txns, _) = schema_to_transaction(
+            &[txn_schema!(from: vec![outputs[0].clone()], to: vec![50 * T])],
+            &key_manager,
+        )
+        .await;
+>>>>>>> 8ce40ef28 (Refactor transaction output)
 
-        let (block, _) = create_next_block(&db, &blocks[0], txns,&key_manager).await;
+        let (block, _) = create_next_block(&db, &blocks[0], txns, &key_manager).await;
         db.add_block(block).unwrap();
-        let _block_and_outputs = add_many_chained_blocks(3, &db,&key_manager).await;
+        let _block_and_outputs = add_many_chained_blocks(3, &db, &key_manager).await;
 
         let header = db.fetch_header_containing_kernel_mmr(num_genesis_kernels - 1).unwrap();
         assert_eq!(header.height(), 0);
@@ -633,17 +644,20 @@ mod validator_node_merkle_root {
         let signature = ValidatorNodeSignature::sign(&sk, &[]);
         let features =
             OutputFeatures::for_validator_node_registration(public_key.clone(), signature.signature().clone());
-        let (tx, _outputs) = schema_to_transaction(&[txn_schema!(
-            from: vec![outputs[0].clone()],
-            to: vec![50 * T],
-            features: features
-        )], &key_manager)
+        let (tx, _outputs) = schema_to_transaction(
+            &[txn_schema!(
+                from: vec![outputs[0].clone()],
+                to: vec![50 * T],
+                features: features
+            )],
+            &key_manager,
+        )
         .await;
         let (block, _) = create_next_block(&db, &blocks[0], tx, &key_manager).await;
         db.add_block(block).unwrap().assert_added();
 
         let consts = db.consensus_constants().unwrap();
-        let (_,_) = add_many_chained_blocks(consts.epoch_length() as usize, &db, &key_manager).await;
+        let (_, _) = add_many_chained_blocks(consts.epoch_length() as usize, &db, &key_manager).await;
 
         let shard_key = db
             .get_shard_key(consts.epoch_length(), public_key.clone())

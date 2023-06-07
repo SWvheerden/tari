@@ -25,11 +25,7 @@ use std::sync::Arc;
 use rand::rngs::OsRng;
 use tari_common::configuration::Network;
 use tari_common_types::types::{Commitment, PrivateKey, PublicKey, Signature};
-use tari_crypto::{
-    commitment::HomomorphicCommitmentFactory,
-    keys::{PublicKey as PK, SecretKey},
-    range_proof::RangeProofService,
-};
+use tari_crypto::keys::{PublicKey as PK, SecretKey};
 use tari_key_manager::key_manager_service::{KeyId, KeyManagerInterface};
 use tari_script::{inputs, script, ExecutionStack, TariScript};
 
@@ -45,7 +41,6 @@ use crate::{
         fee::Fee,
         tari_amount::MicroTari,
         transaction_components::{
-            EncryptedData,
             KernelBuilder,
             KernelFeatures,
             KeyManagerOutput,
@@ -187,7 +182,6 @@ impl TestParams {
     }
 }
 
-
 #[derive(Clone)]
 pub struct UtxoTestParams {
     pub value: MicroTari,
@@ -260,23 +254,43 @@ pub fn create_signature(k: PrivateKey, fee: MicroTari, lock_height: u64, feature
 }
 
 /// Generate a random transaction signature given a key, returning the public key (excess) and the signature.
-pub fn create_random_signature_from_s_key(
-    s_key: PrivateKey,
+pub async fn create_random_signature_from_secret_key(
+    key_manager: &TestKeyManager,
+    secret_key_id: KeyId<PublicKey>,
     fee: MicroTari,
     lock_height: u64,
-    features: KernelFeatures,
+    kernel_features: KernelFeatures,
+    txo_type: TxoType,
 ) -> (PublicKey, Signature) {
-    let _rng = rand::thread_rng();
-    let r = PrivateKey::random(&mut OsRng);
-    let p = PK::from_secret_key(&s_key);
-    let tx_meta = TransactionMetadata::new_with_features(fee, lock_height, features);
-    let e = TransactionKernel::build_kernel_challenge_from_tx_meta(
-        &TransactionKernelVersion::get_current_version(),
-        &PublicKey::from_secret_key(&r),
-        &p,
-        &tx_meta,
+    let tx_meta = TransactionMetadata::new_with_features(fee, lock_height, kernel_features);
+    let nonce_id = key_manager
+        .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+        .await
+        .unwrap();
+    let total_nonce = key_manager.get_public_key_at_key_id(&nonce_id).await.unwrap();
+    let total_excess = key_manager.get_public_key_at_key_id(&secret_key_id).await.unwrap();
+    let kernel_version = TransactionKernelVersion::get_current_version();
+    let kernel_message = TransactionKernel::build_kernel_signature_message(
+        &kernel_version,
+        tx_meta.fee,
+        tx_meta.lock_height,
+        &tx_meta.kernel_features,
+        &tx_meta.burn_commitment,
     );
-    (p, Signature::sign_raw(&s_key, r, &e).unwrap())
+    let kernel_signature = key_manager
+        .get_txo_kernel_signature(
+            &secret_key_id,
+            &nonce_id,
+            &total_nonce,
+            &total_excess,
+            &kernel_version,
+            &kernel_message,
+            &kernel_features,
+            txo_type,
+        )
+        .await
+        .unwrap();
+    (total_excess, kernel_signature)
 }
 
 pub fn create_consensus_manager() -> ConsensusManager {
@@ -642,7 +656,10 @@ pub async fn create_sender_transaction_protocol_with(
 /// You only need to provide the unblinded outputs to spend. This function will calculate the commitment for you.
 /// This is obviously less efficient, but is offered as a convenience.
 /// The output features will be applied to every output
-pub async fn spend_utxos(schema: TransactionSchema, key_manager: &TestKeyManager) -> (Transaction, Vec<KeyManagerOutput>) {
+pub async fn spend_utxos(
+    schema: TransactionSchema,
+    key_manager: &TestKeyManager,
+) -> (Transaction, Vec<KeyManagerOutput>) {
     let (mut stx_protocol, outputs) = create_stx_protocol(schema, key_manager).await;
     stx_protocol.finalize(key_manager).await.unwrap();
     let txn = stx_protocol.get_transaction().unwrap().clone();
@@ -651,7 +668,8 @@ pub async fn spend_utxos(schema: TransactionSchema, key_manager: &TestKeyManager
 
 #[allow(clippy::too_many_lines)]
 pub async fn create_stx_protocol(
-    schema: TransactionSchema, key_manager: &TestKeyManager
+    schema: TransactionSchema,
+    key_manager: &TestKeyManager,
 ) -> (SenderTransactionProtocol, Vec<KeyManagerOutput>) {
     let constants = ConsensusManager::builder(Network::LocalNet)
         .build()
@@ -741,7 +759,6 @@ pub async fn create_stx_protocol(
         stx_builder.with_output(output, sender_offset_key_id).await.unwrap();
     }
     for mut utxo in schema.to_outputs {
-
         let sender_offset_key_id = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
@@ -845,7 +862,7 @@ pub async fn create_coinbase_kernel(
     let public_spend_key = key_manager.get_public_key_at_key_id(&spending_key_id).await.unwrap();
 
     let kernel_signature = key_manager
-        .get_partial_kernel_signature(
+        .get_txo_kernel_signature(
             &spending_key_id,
             &public_nonce_id,
             &public_nonce,
@@ -880,59 +897,104 @@ pub fn create_test_kernel(fee: MicroTari, lock_height: u64, features: KernelFeat
 }
 
 /// Create a new UTXO for the specified value and return the output and spending key
-pub fn create_utxo(
+pub async fn create_utxo(
     value: MicroTari,
-    factories: &CryptoFactories,
+    key_manager: &TestKeyManager,
     features: &OutputFeatures,
     script: &TariScript,
     covenant: &Covenant,
     minimum_value_promise: MicroTari,
-) -> (TransactionOutput, PrivateKey, PrivateKey) {
-    let keys = generate_keys();
-    let offset_keys = generate_keys();
-    let commitment = factories.commitment.commit_value(&keys.k, value.into());
+) -> (TransactionOutput, KeyId<PublicKey>, KeyId<PublicKey>) {
+    let spending_key_id = key_manager
+        .get_next_key_id(CoreKeyManagerBranch::CommitmentMask.get_branch_key())
+        .await
+        .unwrap();
+    let encrypted_data = key_manager
+        .encrypt_data_for_recovery(&spending_key_id, &None, value.into())
+        .await
+        .unwrap();
+    let sender_offset_key_id = key_manager
+        .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+        .await
+        .unwrap();
+    let metadata_message = TransactionOutput::metadata_signature_message_from_parts(
+        &TransactionOutputVersion::get_current_version(),
+        script,
+        features,
+        covenant,
+        &encrypted_data,
+        minimum_value_promise,
+    );
+    let ephemeral_commitment_nonce_id = key_manager
+        .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+        .await
+        .unwrap();
+    let ephemeral_pubkey_nonce_id = key_manager
+        .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+        .await
+        .unwrap();
+    let ephemeral_pubkey = key_manager
+        .get_public_key_at_key_id(&ephemeral_pubkey_nonce_id)
+        .await
+        .unwrap();
+    let ephemeral_commitment = key_manager
+        .get_metadata_signature_ephemeral_commitment(&ephemeral_commitment_nonce_id, features.range_proof_type)
+        .await
+        .unwrap();
+    let metadata_sig = key_manager
+        .get_metadata_signature(
+            &spending_key_id,
+            &value.into(),
+            &ephemeral_commitment_nonce_id,
+            &ephemeral_pubkey_nonce_id,
+            &sender_offset_key_id,
+            &ephemeral_pubkey,
+            &ephemeral_commitment,
+            &TransactionOutputVersion::get_current_version(),
+            &metadata_message,
+            features.range_proof_type,
+        )
+        .await
+        .unwrap();
+    let commitment = key_manager
+        .get_commitment(&spending_key_id, &value.into())
+        .await
+        .unwrap();
     let proof = if features.range_proof_type == RangeProofType::BulletProofPlus {
         Some(
-            factories
-                .range_proof
-                .construct_proof(&keys.k, value.into())
-                .unwrap()
-                .into(),
+            key_manager
+                .construct_range_proof(&spending_key_id, value.into(), minimum_value_promise.into())
+                .await
+                .unwrap(),
         )
     } else {
         None
     };
 
-    let metadata_sig = TransactionOutput::create_metadata_signature(
-        TransactionOutputVersion::get_current_version(),
-        value,
-        &keys.k,
-        script,
-        features,
-        &offset_keys.k,
-        covenant,
-        &EncryptedData::default(),
-        minimum_value_promise,
-    )
-    .unwrap();
-
+    let sender_offset_public_key = key_manager
+        .get_public_key_at_key_id(&sender_offset_key_id)
+        .await
+        .unwrap();
     let utxo = TransactionOutput::new_current_version(
         features.clone(),
         commitment,
         proof,
         script.clone(),
-        offset_keys.pk,
+        sender_offset_public_key,
         metadata_sig,
         covenant.clone(),
-        EncryptedData::default(),
+        encrypted_data,
         minimum_value_promise,
     );
     utxo.verify_range_proof(&CryptoFactories::default().range_proof)
         .unwrap();
-    (utxo, keys.k, offset_keys.k)
+    (utxo, spending_key_id, sender_offset_key_id)
 }
 
-pub async fn schema_to_transaction(txns: &[TransactionSchema], key_manager: &TestKeyManager) -> (Vec<Arc<Transaction>>, Vec<KeyManagerOutput>) {
+pub async fn schema_to_transaction(
+    txns: &[TransactionSchema],
+    key_manager: &TestKeyManager,
+) -> (Vec<Arc<Transaction>>, Vec<KeyManagerOutput>) {
     let mut txs = Vec::new();
     let mut utxos = Vec::new();
     for schema in txns {

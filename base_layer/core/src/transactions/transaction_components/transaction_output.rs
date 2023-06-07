@@ -45,7 +45,6 @@ use tari_crypto::{
     commitment::HomomorphicCommitmentFactory,
     errors::RangeProofError,
     extended_range_proof::{ExtendedRangeProofService, Statement},
-    keys::{PublicKey as PublicKeyTrait, SecretKey},
     ristretto::bulletproofs_plus::RistrettoAggregatedPublicStatement,
     tari_utilities::{hex::Hex, ByteArray},
 };
@@ -463,160 +462,6 @@ impl TransactionOutput {
         })
     }
 
-    // Create partial commitment signature for the metadata for the receiver
-    // TODO: Remove this method when core key manager is fully implemented
-    pub fn create_receiver_partial_metadata_signature(
-        version: TransactionOutputVersion,
-        value: MicroTari,
-        spending_key: &PrivateKey,
-        script: &TariScript,
-        output_features: &OutputFeatures,
-        sender_offset_public_key: &PublicKey,
-        ephemeral_pubkey: &PublicKey,
-        covenant: &Covenant,
-        encrypted_data: &EncryptedData,
-        minimum_value_promise: MicroTari,
-    ) -> Result<ComAndPubSignature, TransactionError> {
-        let nonce_a = TransactionOutput::nonce_a(output_features.range_proof_type, value, minimum_value_promise)?;
-        let nonce_b = PrivateKey::random(&mut OsRng);
-        let ephemeral_commitment = CommitmentFactory::default().commit(&nonce_b, &nonce_a);
-        let pk_value = PrivateKey::from(value.as_u64());
-        let commitment = CommitmentFactory::default().commit(spending_key, &pk_value);
-        let e = TransactionOutput::build_metadata_signature_challenge(
-            &version,
-            script,
-            output_features,
-            sender_offset_public_key,
-            &ephemeral_commitment,
-            ephemeral_pubkey,
-            &commitment,
-            covenant,
-            encrypted_data,
-            minimum_value_promise,
-        );
-        Ok(ComAndPubSignature::sign(
-            &pk_value,
-            spending_key,
-            &PrivateKey::default(),
-            &nonce_a,
-            &nonce_b,
-            &PrivateKey::default(),
-            &e,
-            &CommitmentFactory::default(),
-        )?)
-    }
-
-    // Create partial commitment signature for the metadata for the sender
-    // TODO: Remove this method when core key manager is fully implemented
-    pub fn create_sender_partial_metadata_signature(
-        version: TransactionOutputVersion,
-        commitment: &Commitment,
-        ephemeral_commitment: &Commitment,
-        script: &TariScript,
-        output_features: &OutputFeatures,
-        sender_offset_private_key: &PrivateKey,
-        ephemeral_private_key: Option<&PrivateKey>,
-        covenant: &Covenant,
-        encrypted_data: &EncryptedData,
-        minimum_value_promise: MicroTari,
-    ) -> Result<ComAndPubSignature, TransactionError> {
-        let sender_offset_public_key = PublicKey::from_secret_key(sender_offset_private_key);
-        let random_key = PrivateKey::random(&mut OsRng);
-        let nonce = match ephemeral_private_key {
-            Some(v) => v,
-            None => &random_key,
-        };
-        let ephemeral_pubkey = PublicKey::from_secret_key(nonce);
-        let e = TransactionOutput::build_metadata_signature_challenge(
-            &version,
-            script,
-            output_features,
-            &sender_offset_public_key,
-            ephemeral_commitment,
-            &ephemeral_pubkey,
-            commitment,
-            covenant,
-            encrypted_data,
-            minimum_value_promise,
-        );
-        Ok(ComAndPubSignature::sign(
-            &PrivateKey::default(),
-            &PrivateKey::default(),
-            sender_offset_private_key,
-            &PrivateKey::default(),
-            &PrivateKey::default(),
-            nonce,
-            &e,
-            &CommitmentFactory::default(),
-        )?)
-    }
-
-    // With BulletProofPlus type range proofs, the nonce is a secure random value
-    // With RevealedValue type range proofs, the nonce is always 0 and the minimum value promise equal to the value
-    fn nonce_a(
-        range_proof_type: RangeProofType,
-        value: MicroTari,
-        minimum_value_promise: MicroTari,
-    ) -> Result<PrivateKey, TransactionError> {
-        match range_proof_type {
-            RangeProofType::BulletProofPlus => Ok(PrivateKey::random(&mut OsRng)),
-            RangeProofType::RevealedValue => {
-                if minimum_value_promise != value {
-                    return Err(TransactionError::InvalidRevealedValue(format!(
-                        "Expected {}, received {}",
-                        value, minimum_value_promise
-                    )));
-                }
-                Ok(PrivateKey::default())
-            },
-        }
-    }
-
-    // Create complete commitment signature if you are both the sender and receiver
-    // TODO: Remove this method when core key manager is fully implemented
-    pub fn create_metadata_signature(
-        version: TransactionOutputVersion,
-        value: MicroTari,
-        spending_key: &PrivateKey,
-        script: &TariScript,
-        output_features: &OutputFeatures,
-        sender_offset_private_key: &PrivateKey,
-        covenant: &Covenant,
-        encrypted_data: &EncryptedData,
-        minimum_value_promise: MicroTari,
-    ) -> Result<ComAndPubSignature, TransactionError> {
-        let nonce_a = TransactionOutput::nonce_a(output_features.range_proof_type, value, minimum_value_promise)?;
-        let nonce_b = PrivateKey::random(&mut OsRng);
-        let ephemeral_commitment = CommitmentFactory::default().commit(&nonce_b, &nonce_a);
-        let nonce_x = PrivateKey::random(&mut OsRng);
-        let ephemeral_pubkey = PublicKey::from_secret_key(&nonce_x);
-        let pk_value = PrivateKey::from(value.as_u64());
-        let commitment = CommitmentFactory::default().commit(spending_key, &pk_value);
-        let sender_offset_public_key = PublicKey::from_secret_key(sender_offset_private_key);
-        let e = TransactionOutput::build_metadata_signature_challenge(
-            &version,
-            script,
-            output_features,
-            &sender_offset_public_key,
-            &ephemeral_commitment,
-            &ephemeral_pubkey,
-            &commitment,
-            covenant,
-            encrypted_data,
-            minimum_value_promise,
-        );
-        Ok(ComAndPubSignature::sign(
-            &pk_value,
-            spending_key,
-            sender_offset_private_key,
-            &nonce_a,
-            &nonce_b,
-            &nonce_x,
-            &e,
-            &CommitmentFactory::default(),
-        )?)
-    }
-
     pub fn witness_hash(&self) -> FixedHash {
         DomainSeparatedConsensusHasher::<TransactionHashDomain>::new("transaction_output_witness")
             .chain(&self.proof)
@@ -907,7 +752,7 @@ mod test {
         .await
         {
             Ok(_) => panic!("Should not have been able to create output"),
-            Err(e) => assert_eq!(e, "InvalidRevealedValue(\"Expected 20 µT, received 0 µT\")"),
+            Err(e) => assert_eq!(e, "Invalid revealed value : Expected 20 µT, received 0 µT"),
         }
     }
 
