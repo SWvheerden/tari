@@ -518,7 +518,7 @@ pub struct TestBlockchain {
     db: BlockchainDatabase<TempDatabase>,
     chain: Vec<(&'static str, Arc<ChainBlock>)>,
     rules: ConsensusManager,
-    km: TestKeyManager,
+    pub km: TestKeyManager,
 }
 
 impl TestBlockchain {

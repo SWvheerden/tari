@@ -374,42 +374,43 @@ impl SenderTransactionProtocol {
                 let amount = recipient_data.amount.clone();
                 let ephemeral_public_key_nonce = recipient_data.recipient_ephemeral_public_key_nonce.clone();
 
-                // lets calculate the total sender kernel signature nonce
-                let mut public_nonce = PublicKey::default();
-                // lets calculate the total sender kernel exess
-                let mut public_excess = PublicKey::default();
-
-                for input in &info.inputs {
-                    public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&input.kernel_nonce).await?;
-                    public_excess = public_excess -
-                        key_manager
-                            .get_partial_kernel_signature_excess_with_offset(
-                                &input.output.spending_key_id,
-                                &input.kernel_nonce,
-                            )
-                            .await?;
-                }
-                for output in &info.outputs {
-                    public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&output.kernel_nonce).await?;
-                    public_excess = public_excess +
-                        key_manager
-                            .get_partial_kernel_signature_excess_with_offset(
-                                &output.output.spending_key_id,
-                                &output.kernel_nonce,
-                            )
-                            .await?;
-                }
-
-                if let Some(change) = &info.change_output {
-                    public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&change.kernel_nonce).await?;
-                    public_excess = public_excess +
-                        key_manager
-                            .get_partial_kernel_signature_excess_with_offset(
-                                &change.output.spending_key_id,
-                                &change.kernel_nonce,
-                            )
-                            .await?;
-                }
+                // // lets calculate the total sender kernel signature nonce
+                // let mut public_nonce = PublicKey::default();
+                // // lets calculate the total sender kernel exess
+                // let mut public_excess = PublicKey::default();
+                //
+                // for input in &info.inputs {
+                //     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&input.kernel_nonce).await?;
+                //     public_excess = public_excess -
+                //         key_manager
+                //             .get_partial_kernel_signature_excess_with_offset(
+                //                 &input.output.spending_key_id,
+                //                 &input.kernel_nonce,
+                //             )
+                //             .await?;
+                // }
+                // for output in &info.outputs {
+                //     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&output.kernel_nonce).await?;
+                //     public_excess = public_excess +
+                //         key_manager
+                //             .get_partial_kernel_signature_excess_with_offset(
+                //                 &output.output.spending_key_id,
+                //                 &output.kernel_nonce,
+                //             )
+                //             .await?;
+                // }
+                //
+                // if let Some(change) = &info.change_output {
+                //     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&change.kernel_nonce).await?;
+                //     public_excess = public_excess +
+                //         key_manager
+                //             .get_partial_kernel_signature_excess_with_offset(
+                //                 &change.output.spending_key_id,
+                //                 &change.kernel_nonce,
+                //             )
+                //             .await?;
+                // }
+                let (public_nonce, public_excess) = SenderTransactionProtocol::calculate_total_nonce_and_total_public_excess(&info, key_manager).await?;
                 let sender_offset_public_key = key_manager
                     .get_public_key_at_key_id(&recipient_script_offset_secret_key_id)
                     .await?;
@@ -438,6 +439,44 @@ impl SenderTransactionProtocol {
             },
             _ => Err(TPE::InvalidStateError),
         }
+    }
+    async fn calculate_total_nonce_and_total_public_excess<KM: BaseLayerKeyManagerInterface>(info: &RawTransactionInfo, key_manager: &KM) -> Result<(PublicKey, PublicKey),TPE>{
+        // lets calculate the total sender kernel signature nonce
+        let mut public_nonce = PublicKey::default();
+        // lets calculate the total sender kernel exess
+        let mut public_excess = PublicKey::default();
+        for input in &info.inputs {
+            public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&input.kernel_nonce).await?;
+            public_excess = public_excess -
+                key_manager
+                    .get_partial_kernel_signature_excess_with_offset(
+                        &input.output.spending_key_id,
+                        &input.kernel_nonce,
+                    )
+                    .await?;
+        }
+        for output in &info.outputs {
+            public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&output.kernel_nonce).await?;
+            public_excess = public_excess +
+                key_manager
+                    .get_partial_kernel_signature_excess_with_offset(
+                        &output.output.spending_key_id,
+                        &output.kernel_nonce,
+                    )
+                    .await?;
+        }
+
+        if let Some(change) = &info.change_output {
+            public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&change.kernel_nonce).await?;
+            public_excess = public_excess +
+                key_manager
+                    .get_partial_kernel_signature_excess_with_offset(
+                        &change.output.spending_key_id,
+                        &change.kernel_nonce,
+                    )
+                    .await?;
+        }
+        Ok((public_nonce, public_excess))
     }
 
     /// Add the signed transaction from the recipient and move to the next state
@@ -517,11 +556,18 @@ impl SenderTransactionProtocol {
         key_manager: &KM,
     ) -> Result<Transaction, TPE> {
         let mut tx_builder = TransactionBuilder::new();
+        let (total_public_nonce, total_public_excess) =  if info.recipient_data.is_none(){
+            //we dont have a recipient and thus we have not yet calculated the sender_nonce and sender_offset_excess
+            SenderTransactionProtocol::calculate_total_nonce_and_total_public_excess(&info, key_manager).await?
+
+        } else {
+            let total_public_nonce = &info.total_sender_nonce + info.recipient_partial_kernel_signature.get_public_nonce();
+            let total_public_excess = &info.total_sender_excess + &info.recipient_partial_kernel_excess;
+            (total_public_nonce, total_public_excess)
+        };
 
         let mut offset = info.recipient_partial_kernel_offset.clone();
         let mut signature = info.recipient_partial_kernel_signature.clone();
-        let total_public_nonce = &info.total_sender_nonce + info.recipient_partial_kernel_signature.get_public_nonce();
-        let total_public_excess = &info.total_sender_excess + &info.recipient_partial_kernel_excess;
         let mut script_keys = Vec::new();
         let mut sender_offset_keys = Vec::new();
 
@@ -578,7 +624,6 @@ impl SenderTransactionProtocol {
         }
 
         for output in &info.outputs {
-            dbg!("add output");
             tx_builder.add_output(output.output.as_transaction_output(key_manager).await?);
             signature = &signature +
                 &key_manager
@@ -1054,9 +1099,13 @@ mod test {
             Ok(_) => (),
             Err(e) => panic!("{:?}", e),
         }
-        let _tx = sender.get_transaction().unwrap();
+        let tx = sender.get_transaction().unwrap();
         // let change_offset = key_manager.getoff
         // assert_eq!(tx.offset, p1.offset + p2.offset);
+        let rules = create_consensus_rules();
+        let factories = CryptoFactories::default();
+        let validator = TransactionInternalConsistencyValidator::new(false, rules, factories);
+        assert!(validator.validate(tx, None, None, u64::MAX).is_ok());
     }
 
     #[tokio::test]

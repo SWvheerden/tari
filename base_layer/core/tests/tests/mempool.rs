@@ -119,7 +119,7 @@ async fn test_insert_and_process_published_block() {
     let orphan = Arc::new(orphan);
 
     let tx2 = txn_schema!(from: vec![outputs[1][0].clone()], to: vec![1*T], fee: 20*uT, lock: 0, features: OutputFeatures::default());
-    let tx2 = Arc::new(spend_utxos(tx2).await.0);
+    let tx2 = Arc::new(spend_utxos(tx2,&key_manager).await.0);
 
     let tx3 = txn_schema!(
         from: vec![outputs[1][1].clone()],
@@ -131,7 +131,7 @@ async fn test_insert_and_process_published_block() {
             ..Default::default()
         }
     );
-    let tx3 = Arc::new(spend_utxos(tx3).await.0);
+    let tx3 = Arc::new(spend_utxos(tx3,&key_manager).await.0);
 
     let tx5 = txn_schema!(
         from: vec![outputs[1][2].clone()],
@@ -143,9 +143,9 @@ async fn test_insert_and_process_published_block() {
             ..Default::default()
         }
     );
-    let tx5 = Arc::new(spend_utxos(tx5).await.0);
+    let tx5 = Arc::new(spend_utxos(tx5,&key_manager).await.0);
     let tx6 = txn_schema!(from: vec![outputs[1][3].clone()], to: vec![1 * T], fee: 25*uT, lock: 0, features: OutputFeatures::default());
-    let tx6 = spend_utxos(tx6).await.0;
+    let tx6 = spend_utxos(tx6,&key_manager).await.0;
 
     mempool.insert(orphan.clone()).await.unwrap();
     mempool.insert(tx2.clone()).await.unwrap();
@@ -294,7 +294,7 @@ async fn test_time_locked() {
     // Block height should be 1
     let mut tx2 = txn_schema!(from: vec![outputs[1][0].clone()], to: vec![1*T], fee: 20*uT, lock: 0, features: OutputFeatures::default());
     tx2.lock_height = 3;
-    let tx2 = Arc::new(spend_utxos(tx2).await.0);
+    let tx2 = Arc::new(spend_utxos(tx2,&key_manager).await.0);
 
     let mut tx3 = txn_schema!(
         from: vec![outputs[1][1].clone()],
@@ -307,7 +307,7 @@ async fn test_time_locked() {
         }
     );
     tx3.lock_height = 2;
-    let tx3 = Arc::new(spend_utxos(tx3).await.0);
+    let tx3 = Arc::new(spend_utxos(tx3,&key_manager).await.0);
 
     // Tx2 should not go in, but Tx3 should
     assert_eq!(
@@ -390,7 +390,7 @@ async fn test_retrieve() {
             ..Default::default()
         }),
     ];
-    let (tx, utxos) = schema_to_transaction(&txs).await;
+    let (tx, utxos) = schema_to_transaction(&txs,&key_manager).await;
     for t in &tx {
         mempool.insert(t.clone()).await.unwrap();
     }
@@ -432,7 +432,7 @@ async fn test_retrieve() {
         // account for change output
         txn_schema!(from: vec![outputs[2][8].clone()], to: vec![], fee: 40*uT, lock: 0, features: OutputFeatures::default()),
     ];
-    let (tx2, _) = schema_to_transaction(&txs).await;
+    let (tx2, _) = schema_to_transaction(&txs,&key_manager).await;
     for t in &tx2 {
         mempool.insert(t.clone()).await.unwrap();
     }
@@ -502,7 +502,7 @@ async fn test_zero_conf() {
         fee: 10*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx02, tx02_out) = spend_utxos(txn_schema!(
         from: vec![outputs[1][1].clone()],
@@ -510,7 +510,7 @@ async fn test_zero_conf() {
         fee: 20*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx03, tx03_out) = spend_utxos(txn_schema!(
         from: vec![outputs[1][2].clone()],
@@ -518,7 +518,7 @@ async fn test_zero_conf() {
         fee: 30*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx04, tx04_out) = spend_utxos(txn_schema!(
         from: vec![outputs[1][3].clone()],
@@ -526,7 +526,7 @@ async fn test_zero_conf() {
         fee: 40*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     assert_eq!(
         mempool.insert(Arc::new(tx01.clone())).await.unwrap(),
@@ -547,7 +547,7 @@ async fn test_zero_conf() {
         to: vec![7 * T, 4 * T],
         fee: 50*uT, lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx12, tx12_out) = spend_utxos(txn_schema!(
         from: vec![tx01_out[1].clone(), tx02_out[0].clone(), tx02_out[1].clone()],
@@ -555,7 +555,7 @@ async fn test_zero_conf() {
         fee: 60*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx13, tx13_out) = spend_utxos(txn_schema!(
         from: tx03_out,
@@ -563,14 +563,14 @@ async fn test_zero_conf() {
         fee: 70*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx14, tx14_out) = spend_utxos(txn_schema!(
         from: tx04_out,
         to: vec![10 * T, 4 * T],
         fee: 80*uT, lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     assert_eq!(
         mempool.insert(Arc::new(tx11.clone())).await.unwrap(),
@@ -596,7 +596,7 @@ async fn test_zero_conf() {
         fee: 90*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx22, tx22_out) = spend_utxos(txn_schema!(
         from: vec![tx12_out[0].clone()],
@@ -604,7 +604,7 @@ async fn test_zero_conf() {
         fee: 100*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx23, tx23_out) = spend_utxos(txn_schema!(
         from: vec![tx12_out[1].clone(), tx13_out[0].clone(), tx13_out[1].clone()],
@@ -612,14 +612,14 @@ async fn test_zero_conf() {
         fee: 110*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx24, tx24_out) = spend_utxos(txn_schema!(
         from: vec![tx14_out[0].clone()],
         to: vec![3 * T, 3 * T],
         fee: 120*uT, lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     assert_eq!(
         mempool.insert(Arc::new(tx21.clone())).await.unwrap(),
@@ -645,7 +645,7 @@ async fn test_zero_conf() {
         fee: 130*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx32, _) = spend_utxos(txn_schema!(
         from: vec![tx11_out[1].clone(), tx22_out[0].clone(), tx22_out[1].clone()],
@@ -653,7 +653,7 @@ async fn test_zero_conf() {
         fee: 140*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx33, _) = spend_utxos(txn_schema!(
         from: vec![tx14_out[1].clone(), tx23_out[0].clone(), tx23_out[1].clone()],
@@ -661,7 +661,7 @@ async fn test_zero_conf() {
         fee: 150*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     let (tx34, _) = spend_utxos(txn_schema!(
         from: tx24_out,
@@ -669,7 +669,7 @@ async fn test_zero_conf() {
         fee: 160*uT,
         lock: 0,
         features: OutputFeatures::default()
-    ))
+    ),&key_manager)
     .await;
     assert_eq!(
         mempool.insert(Arc::new(tx31.clone())).await.unwrap(),
@@ -821,7 +821,7 @@ async fn test_reorg() {
         txn_schema!(from: vec![outputs[1][1].clone()], to: vec![], fee: 25*uT, lock: 0, features: OutputFeatures::default()),
         txn_schema!(from: vec![outputs[1][2].clone()], to: vec![], fee: 25*uT, lock: 0, features: OutputFeatures::default()),
     ];
-    let (txns2, utxos) = schema_to_transaction(&schemas).await;
+    let (txns2, utxos) = schema_to_transaction(&schemas,&key_manager).await;
     outputs.push(utxos);
     for tx in &txns2 {
         mempool.insert(tx.clone()).await.unwrap();
@@ -840,7 +840,7 @@ async fn test_reorg() {
         txn_schema!(from: vec![outputs[2][1].clone()], to: vec![], fee: 25*uT, lock: 5, features: OutputFeatures::default()),
         txn_schema!(from: vec![outputs[2][2].clone()], to: vec![], fee: 25*uT, lock: 0, features: OutputFeatures::default()),
     ];
-    let (txns3, utxos) = schema_to_transaction(&schemas).await;
+    let (txns3, utxos) = schema_to_transaction(&schemas,&key_manager).await;
     outputs.push(utxos);
     for tx in &txns3 {
         mempool.insert(tx.clone()).await.unwrap();
@@ -930,7 +930,7 @@ async fn receive_and_propagate_transaction() {
         randomx_vm_flags: RandomXFlag::FLAG_DEFAULT,
     });
 
-    let (tx, _) = spend_utxos(txn_schema!(from: vec![utxo], to: vec![2 * T, 2 * T, 2 * T])).await;
+    let (tx, _) = spend_utxos(txn_schema!(from: vec![utxo], to: vec![2 * T, 2 * T, 2 * T]),&key_manager).await;
     let (orphan, _, _) = tx!(1*T, fee: 100*uT, &key_manager);
     let tx_excess_sig = tx.body.kernels()[0].excess_sig.clone();
     let orphan_excess_sig = orphan.body.kernels()[0].excess_sig.clone();
@@ -1285,7 +1285,7 @@ async fn consensus_validation_versions() {
         input_version: Some(TransactionInputVersion::V1),
         output_version: None,
     };
-    let (tx, _) = spend_utxos(tx_schema).await;
+    let (tx, _) = spend_utxos(tx_schema,&key_manager).await;
     validator.validate(&tx, Some(25.into()), None, u64::MAX).unwrap_err();
 
     // invalid output version
@@ -1303,7 +1303,7 @@ async fn consensus_validation_versions() {
         output_version: Some(TransactionOutputVersion::V1),
     };
 
-    let (tx, _) = spend_utxos(tx_schema).await;
+    let (tx, _) = spend_utxos(tx_schema,&key_manager).await;
     validator.validate(&tx, Some(25.into()), None, u64::MAX).unwrap_err();
 
     // invalid output features version
@@ -1321,7 +1321,7 @@ async fn consensus_validation_versions() {
         output_version: None,
     };
 
-    let (tx, _) = spend_utxos(tx_schema).await;
+    let (tx, _) = spend_utxos(tx_schema,&key_manager).await;
     validator.validate(&tx, Some(25.into()), None, u64::MAX).unwrap_err();
 }
 
@@ -1360,7 +1360,7 @@ async fn consensus_validation_unique_excess_sig() {
     .unwrap();
 
     let schema = txn_schema!(from: vec![outputs[1][0].clone()], to: vec![1_500_000 * uT]);
-    let (tx1, _) = spend_utxos(schema.clone()).await;
+    let (tx1, _) = spend_utxos(schema.clone(),&key_manager).await;
     generate_block(&store, &mut blocks, vec![tx1.clone()], &consensus_manager, &key_manager)
         .await
         .unwrap();
@@ -1412,16 +1412,16 @@ async fn block_event_and_reorg_event_handling() {
 
     // Bob creates Block 1 and sends it to Alice. Alice adds it to her chain and creates a block event that the Mempool
     // service will receive.
-    let (tx1, utxos1) = schema_to_transaction(&[txn_schema!(from: vec![utxos0], to: vec![1 * T, 1 * T])]).await;
+    let (tx1, utxos1) = schema_to_transaction(&[txn_schema!(from: vec![utxos0], to: vec![1 * T, 1 * T])],&key_manager).await;
     let (txs_a, _utxos2) = schema_to_transaction(&[
         txn_schema!(from: vec![utxos1[0].clone()], to: vec![400_000 * uT, 590_000 * uT]),
         txn_schema!(from: vec![utxos1[1].clone()], to: vec![750_000 * uT, 240_000 * uT]),
-    ])
+    ],&key_manager)
     .await;
     let (txs_b, _utxos3) = schema_to_transaction(&[
         txn_schema!(from: vec![utxos1[0].clone()], to: vec![100_000 * uT, 890_000 * uT]),
         txn_schema!(from: vec![utxos1[1].clone()], to: vec![850_000 * uT, 140_000 * uT]),
-    ])
+    ],&key_manager)
     .await;
     let tx1 = (*tx1[0]).clone();
     let tx2a = (*txs_a[0]).clone();

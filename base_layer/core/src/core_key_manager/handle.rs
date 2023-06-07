@@ -83,6 +83,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         db: KeyManagerDatabase<TBackend, PublicKey>,
         crypto_factories: CryptoFactories,
     ) -> Result<Self, KeyManagerServiceError> {
+        dbg!("this should only happen once");
         Ok(CoreKeyManagerHandle {
             core_key_manager_inner: Arc::new(RwLock::new(CoreKeyManagerInner::new(
                 master_seed,

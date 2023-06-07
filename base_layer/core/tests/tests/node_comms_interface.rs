@@ -334,7 +334,7 @@ async fn inbound_fetch_blocks_before_horizon_height() {
         from: vec![key_manager_output],
         to: vec![MicroTari(5_000), MicroTari(4_000)]
     );
-    let (txn, _) = spend_utxos(txn).await;
+    let (txn, _) = spend_utxos(txn,&key_manager).await;
     let block1 = append_block(&store, &block0, vec![txn], &consensus_manager, 1.into(), &key_manager)
         .await
         .unwrap();

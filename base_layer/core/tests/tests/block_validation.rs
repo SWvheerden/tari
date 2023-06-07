@@ -187,7 +187,7 @@ async fn inputs_are_not_malleable() {
         .add_block(blocks.new_block("A1").child_of("GB").difficulty(1))
         .await;
 
-    let (txs, _) = schema_to_transaction(&[txn_schema!(from: vec![output.clone()], to: vec![50 * T])]).await;
+    let (txs, _) = schema_to_transaction(&[txn_schema!(from: vec![output.clone()], to: vec![50 * T])], &blockchain.key_manager).await;
     let txs = txs.into_iter().map(|tx| Clone::clone(&*tx)).collect();
     blockchain
         .add_block(
@@ -291,21 +291,21 @@ async fn test_orphan_validator() {
     let (tx01, _) = spend_utxos(
         txn_schema!(from: vec![outputs[1].clone()], to: vec![20_000 * uT], fee: 10*uT, lock: 0, features:
         OutputFeatures::default()),
-    )
+    &key_manager)
     .await;
     let (tx02, _) = spend_utxos(
         txn_schema!(from: vec![outputs[2].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, features:
-        OutputFeatures::default()),
+        OutputFeatures::default()),&key_manager
     )
     .await;
     let (tx03, _) = spend_utxos(
         txn_schema!(from: vec![outputs[3].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, features:
-        OutputFeatures::default()),
+        OutputFeatures::default()),&key_manager
     )
     .await;
     let (tx04, _) = spend_utxos(
         txn_schema!(from: vec![outputs[3].clone()], to: vec![50_000 * uT], fee: 20*uT, lock: 2, features:
-        OutputFeatures::default()),
+        OutputFeatures::default()),&key_manager
     )
     .await;
     let (template, _) =
@@ -428,12 +428,12 @@ async fn test_orphan_body_validation() {
 
     let (tx01, _) = spend_utxos(
         txn_schema!(from: vec![outputs[1].clone()], to: vec![20_000 * uT], fee: 10*uT, lock: 0, features:
-OutputFeatures::default()),
+OutputFeatures::default()),&key_manager
     )
     .await;
     let (tx02, _) = spend_utxos(
         txn_schema!(from: vec![outputs[2].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, features:
-OutputFeatures::default()),
+OutputFeatures::default()),&key_manager
     )
     .await;
     let (template, _) = chain_block_with_new_coinbase(&genesis, vec![tx01, tx02], &rules, None, &key_manager).await;
@@ -637,12 +637,12 @@ async fn test_header_validation() {
 
     let (tx01, _) = spend_utxos(
         txn_schema!(from: vec![outputs[1].clone()], to: vec![20_000 * uT], fee: 10*uT, lock: 0, features:
-OutputFeatures::default()),
+OutputFeatures::default()),&key_manager
     )
     .await;
     let (tx02, _) = spend_utxos(
         txn_schema!(from: vec![outputs[2].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, features:
-OutputFeatures::default()),
+OutputFeatures::default()),&key_manager
     )
     .await;
     let (template, _) = chain_block_with_new_coinbase(&genesis, vec![tx01, tx02], &rules, None, &key_manager).await;
@@ -744,16 +744,16 @@ async fn test_block_sync_body_validator() {
     // we have created the blockchain, lets create a second valid block
 
     let (tx01, _) = spend_utxos(
-        txn_schema!(from: vec![outputs[1].clone()], to: vec![20_000 * uT], fee: 10*uT, lock: 0, features: OutputFeatures::default()),
+        txn_schema!(from: vec![outputs[1].clone()], to: vec![20_000 * uT], fee: 10*uT, lock: 0, features: OutputFeatures::default()),&key_manager
     ).await;
     let (tx02, _) = spend_utxos(
-        txn_schema!(from: vec![outputs[2].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, features: OutputFeatures::default()),
+        txn_schema!(from: vec![outputs[2].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, features: OutputFeatures::default()),&key_manager
     ).await;
     let (tx03, _) = spend_utxos(
-        txn_schema!(from: vec![outputs[3].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, features: OutputFeatures::default()),
+        txn_schema!(from: vec![outputs[3].clone()], to: vec![40_000 * uT], fee: 20*uT, lock: 0, features: OutputFeatures::default()),&key_manager
     ).await;
     let (tx04, _) = spend_utxos(
-        txn_schema!(from: vec![outputs[3].clone()], to: vec![50_000 * uT], fee: 20*uT, lock: 2, features: OutputFeatures::default()),
+        txn_schema!(from: vec![outputs[3].clone()], to: vec![50_000 * uT], fee: 20*uT, lock: 2, features: OutputFeatures::default()),&key_manager
     ).await;
 
     // Coinbase extra field is too large

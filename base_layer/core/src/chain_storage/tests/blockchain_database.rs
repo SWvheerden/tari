@@ -498,7 +498,8 @@ mod fetch_header_containing_kernel_mmr {
         let genesis = db.fetch_block(0, true).unwrap();
         let (blocks, outputs) = add_many_chained_blocks(1, &db);
         let num_genesis_kernels = genesis.block().body.kernels().len() as u64;
-        let (txns, _) = schema_to_transaction(&[txn_schema!(from: vec![outputs[0].clone()], to: vec![50 * T])]).await;
+        let key_manager = create_test_core_key_manager_with_memory_db();
+        let (txns, _) = schema_to_transaction(&[txn_schema!(from: vec![outputs[0].clone()], to: vec![50 * T])], &key_manager).await;
 
         let (block, _) = create_next_block(&db, &blocks[0], txns);
         db.add_block(block).unwrap();
@@ -599,6 +600,7 @@ mod validator_node_merkle_root {
     #[tokio::test]
     async fn it_has_the_correct_merkle_root_for_current_vn_set() {
         let db = setup();
+        let key_manager = create_test_core_key_manager_with_memory_db();
         let (blocks, outputs) = add_many_chained_blocks(1, &db);
 
         let (sk, public_key) = PublicKey::random_keypair(&mut OsRng);
@@ -609,7 +611,7 @@ mod validator_node_merkle_root {
             from: vec![outputs[0].clone()],
             to: vec![50 * T],
             features: features
-        )])
+        )], &key_manager)
         .await;
         let (block, _) = create_next_block(&db, &blocks[0], tx);
         db.add_block(block).unwrap().assert_added();

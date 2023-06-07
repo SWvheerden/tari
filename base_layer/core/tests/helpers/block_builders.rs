@@ -594,7 +594,7 @@ pub async fn generate_new_block_with_achieved_difficulty<B: BlockchainBackend>(
     let mut txns = Vec::new();
     let mut block_utxos = Vec::new();
     for schema in schemas {
-        let (tx, mut utxos) = spend_utxos(schema).await;
+        let (tx, mut utxos) = spend_utxos(schema, key_manager).await;
         txns.push(tx);
         block_utxos.append(&mut utxos);
     }
@@ -617,7 +617,7 @@ pub async fn generate_new_block_with_coinbase<B: BlockchainBackend>(
     let mut block_utxos = Vec::new();
     let mut fees = MicroTari(0);
     for schema in schemas {
-        let (tx, mut utxos) = spend_utxos(schema).await;
+        let (tx, mut utxos) = spend_utxos(schema, key_manager).await;
         fees += tx.body.get_total_fee();
         txns.push(tx);
         block_utxos.append(&mut utxos);

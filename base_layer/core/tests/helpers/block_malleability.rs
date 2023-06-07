@@ -75,7 +75,7 @@ async fn check_block_changes_are_detected(field: MerkleMountainRangeField, block
         to: vec![50 * T],
         input_version: TransactionInputVersion::V0,
         output_version: TransactionOutputVersion::V0
-    )])
+    )], &blockchain.key_manager)
     .await;
     blockchain
         .add_block(

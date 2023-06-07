@@ -91,40 +91,6 @@ pub struct TestParams {
     pub transaction_weight: TransactionWeight,
 }
 
-#[derive(Clone)]
-pub struct UtxoTestParams {
-    pub value: MicroTari,
-    pub script: TariScript,
-    pub features: OutputFeatures,
-    pub input_data: Option<ExecutionStack>,
-    pub covenant: Covenant,
-    pub output_version: Option<TransactionOutputVersion>,
-    pub minimum_value_promise: MicroTari,
-}
-
-impl UtxoTestParams {
-    pub fn with_value(value: MicroTari) -> Self {
-        Self {
-            value,
-            ..Default::default()
-        }
-    }
-}
-
-impl Default for UtxoTestParams {
-    fn default() -> Self {
-        Self {
-            value: 10.into(),
-            script: script![Nop],
-            features: OutputFeatures::default(),
-            input_data: None,
-            covenant: Covenant::default(),
-            output_version: None,
-            minimum_value_promise: MicroTari::zero(),
-        }
-    }
-}
-
 impl TestParams {
     pub async fn new(key_manager: &TestKeyManager) -> TestParams {
         let spend_key = key_manager
@@ -218,6 +184,41 @@ impl TestParams {
         self.fee().weighting().round_up_features_and_scripts_size(
             script![Nop].get_serialized_size() + output_features.get_serialized_size(),
         ) * num_outputs
+    }
+}
+
+
+#[derive(Clone)]
+pub struct UtxoTestParams {
+    pub value: MicroTari,
+    pub script: TariScript,
+    pub features: OutputFeatures,
+    pub input_data: Option<ExecutionStack>,
+    pub covenant: Covenant,
+    pub output_version: Option<TransactionOutputVersion>,
+    pub minimum_value_promise: MicroTari,
+}
+
+impl UtxoTestParams {
+    pub fn with_value(value: MicroTari) -> Self {
+        Self {
+            value,
+            ..Default::default()
+        }
+    }
+}
+
+impl Default for UtxoTestParams {
+    fn default() -> Self {
+        Self {
+            value: 10.into(),
+            script: script![Nop],
+            features: OutputFeatures::default(),
+            input_data: None,
+            covenant: Covenant::default(),
+            output_version: None,
+            minimum_value_promise: MicroTari::zero(),
+        }
     }
 }
 
@@ -484,7 +485,7 @@ pub async fn create_tx(
         key_manager,
     )
     .await;
-    let tx = create_transaction_with(lock_height, fee_per_gram, inputs.clone(), outputs.clone()).await;
+    let tx = create_transaction_with(lock_height, fee_per_gram, inputs.clone(), outputs.clone(), key_manager).await;
     (tx, inputs, outputs.into_iter().map(|(utxo, _)| utxo).collect())
 }
 
@@ -574,8 +575,9 @@ pub async fn create_transaction_with(
     fee_per_gram: MicroTari,
     inputs: Vec<KeyManagerOutput>,
     outputs: Vec<(KeyManagerOutput, KeyId<PublicKey>)>,
+    key_manager: &TestKeyManager,
 ) -> Transaction {
-    let stx_protocol = create_sender_transaction_protocol_with(lock_height, fee_per_gram, inputs, outputs)
+    let stx_protocol = create_sender_transaction_protocol_with(lock_height, fee_per_gram, inputs, outputs, key_manager)
         .await
         .unwrap();
     stx_protocol.take_transaction().unwrap()
@@ -586,9 +588,9 @@ pub async fn create_sender_transaction_protocol_with(
     fee_per_gram: MicroTari,
     inputs: Vec<KeyManagerOutput>,
     outputs: Vec<(KeyManagerOutput, KeyId<PublicKey>)>,
+    key_manager: &TestKeyManager,
 ) -> Result<SenderTransactionProtocol, TransactionProtocolError> {
     let rules = ConsensusManager::builder(Network::LocalNet).build();
-    let key_manager = create_test_core_key_manager_with_memory_db();
     let constants = rules.consensus_constants(0).clone();
     let mut stx_builder = SenderTransactionProtocol::builder(constants, key_manager.clone());
     let script = script!(Nop);
@@ -631,7 +633,7 @@ pub async fn create_sender_transaction_protocol_with(
     }
 
     let mut stx_protocol = stx_builder.build().await.unwrap();
-    stx_protocol.finalize(&key_manager).await?;
+    stx_protocol.finalize(key_manager).await?;
 
     Ok(stx_protocol)
 }
@@ -640,22 +642,21 @@ pub async fn create_sender_transaction_protocol_with(
 /// You only need to provide the unblinded outputs to spend. This function will calculate the commitment for you.
 /// This is obviously less efficient, but is offered as a convenience.
 /// The output features will be applied to every output
-pub async fn spend_utxos(schema: TransactionSchema) -> (Transaction, Vec<KeyManagerOutput>) {
-    let (mut stx_protocol, outputs, key_manager) = create_stx_protocol(schema).await;
-    stx_protocol.finalize(&key_manager).await.unwrap();
+pub async fn spend_utxos(schema: TransactionSchema, key_manager: &TestKeyManager) -> (Transaction, Vec<KeyManagerOutput>) {
+    let (mut stx_protocol, outputs) = create_stx_protocol(schema, key_manager).await;
+    stx_protocol.finalize(key_manager).await.unwrap();
     let txn = stx_protocol.get_transaction().unwrap().clone();
     (txn, outputs)
 }
 
 #[allow(clippy::too_many_lines)]
 pub async fn create_stx_protocol(
-    schema: TransactionSchema,
-) -> (SenderTransactionProtocol, Vec<KeyManagerOutput>, TestKeyManager) {
+    schema: TransactionSchema, key_manager: &TestKeyManager
+) -> (SenderTransactionProtocol, Vec<KeyManagerOutput>) {
     let constants = ConsensusManager::builder(Network::LocalNet)
         .build()
         .consensus_constants(0)
         .clone();
-    let key_manager = create_test_core_key_manager_with_memory_db();
     let mut stx_builder = SenderTransactionProtocol::builder(constants, key_manager.clone());
     let script = script!(Nop);
     let change_script_key_id = key_manager
@@ -775,7 +776,7 @@ pub async fn create_stx_protocol(
         let output = KeyManagerOutputBuilder::new(val, spending_key)
             .with_features(schema.features.clone())
             .with_script(schema.script.clone())
-            .with_encrypted_data(&key_manager)
+            .with_encrypted_data(key_manager)
             .await
             .unwrap()
             .with_input_data(input_data)
@@ -783,7 +784,7 @@ pub async fn create_stx_protocol(
             .with_version(version)
             .with_sender_offset_public_key(sender_offset_public_key)
             .with_script_private_key(script_key_id.clone())
-            .sign_as_sender_and_receiver_using_key_id(&key_manager, &sender_offset_key_id)
+            .sign_as_sender_and_receiver_using_key_id(key_manager, &sender_offset_key_id)
             .await
             .unwrap()
             .try_build()
@@ -892,7 +893,7 @@ pub async fn create_stx_protocol(
     //     minimum_value_promise,
     // );
     outputs.push(change_output);
-    (stx_protocol, outputs, key_manager)
+    (stx_protocol, outputs)
 }
 
 pub async fn create_coinbase_kernel(
@@ -998,11 +999,11 @@ pub fn create_utxo(
     (utxo, keys.k, offset_keys.k)
 }
 
-pub async fn schema_to_transaction(txns: &[TransactionSchema]) -> (Vec<Arc<Transaction>>, Vec<KeyManagerOutput>) {
+pub async fn schema_to_transaction(txns: &[TransactionSchema], key_manager: &TestKeyManager) -> (Vec<Arc<Transaction>>, Vec<KeyManagerOutput>) {
     let mut txs = Vec::new();
     let mut utxos = Vec::new();
     for schema in txns {
-        let (txn, mut output) = spend_utxos(schema.clone()).await;
+        let (txn, mut output) = spend_utxos(schema.clone(), key_manager).await;
         txs.push(Arc::new(txn));
         utxos.append(&mut output);
     }
