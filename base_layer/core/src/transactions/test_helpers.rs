@@ -559,7 +559,7 @@ pub async fn create_key_manager_txos(
 
     let amount_per_input = amount / input_count as u64;
     let mut inputs = Vec::new();
-    for i in 0..output_count {
+    for i in 0..input_count {
         let mut params = UtxoTestParams {
             features: OutputFeatures {
                 maturity: input_maturity,
@@ -691,7 +691,7 @@ pub async fn create_stx_protocol(
         .unwrap();
     let change_covenant = Covenant::default();
     let change_public_key = key_manager
-        .get_public_key_at_key_id(&change_secret_key_id)
+        .get_public_key_at_key_id(&change_script_key_id)
         .await
         .unwrap();
     let change_input_data = inputs!(change_public_key);
@@ -801,47 +801,7 @@ pub async fn create_stx_protocol(
 
     let stx_protocol = stx_builder.build().await.unwrap();
     let change_output = stx_protocol.get_change_output().unwrap().unwrap();
-    // let change = stx_protocol.get_change_amount().unwrap();
-    // // The change output is assigned its own random script offset private key
-    // let change_sender_offset_public_key = stx_protocol.get_change_sender_offset_public_key().unwrap().unwrap();
-    //
-    // let script = script!(Nop);
-    // let covenant = Covenant::default();
-    // let change_features = OutputFeatures::default();
-    //
-    // let encrypted_data = EncryptedData::default();
-    //
-    // let minimum_value_promise = MicroTari::zero();
-    //
-    // let change_metadata_sig = TransactionOutput::create_metadata_signature(
-    //     output_version,
-    //     change,
-    //     &test_params_change_and_txn.change_spend_key,
-    //     &script,
-    //     &change_features,
-    //     &test_params_change_and_txn.sender_offset_private_key,
-    //     &covenant,
-    //     &encrypted_data,
-    //     minimum_value_promise,
-    // )
-    // .unwrap();
-    //
-    // let change_output = UnblindedOutput::new_current_version(
-    //     change,
-    //     test_params_change_and_txn.change_spend_key.clone(),
-    //     change_features,
-    //     script,
-    //     inputs!(PublicKey::from_secret_key(
-    //         &test_params_change_and_txn.script_private_key
-    //     )),
-    //     test_params_change_and_txn.script_private_key,
-    //     change_sender_offset_public_key,
-    //     change_metadata_sig,
-    //     0,
-    //     covenant,
-    //     encrypted_data,
-    //     minimum_value_promise,
-    // );
+
     outputs.push(change_output);
     (stx_protocol, outputs)
 }
