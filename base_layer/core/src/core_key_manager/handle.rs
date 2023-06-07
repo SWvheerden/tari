@@ -285,17 +285,17 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         script_key_id: &KeyId<PublicKey>,
         spend_key_id: &KeyId<PublicKey>,
         value: &PrivateKey,
-        tx_version: &TransactionInputVersion,
+        txi_version: &TransactionInputVersion,
         script_message: &[u8; 32],
     ) -> Result<ComAndPubSignature, TransactionError> {
         (*self.core_key_manager_inner)
             .read()
             .await
-            .get_script_signature(script_key_id, spend_key_id, value, tx_version, script_message)
+            .get_script_signature(script_key_id, spend_key_id, value, txi_version, script_message)
             .await
     }
 
-    async fn get_partial_kernel_signature(
+    async fn get_txo_kernel_signature(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         nonce_id: &KeyId<PublicKey>,
@@ -309,7 +309,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         (*self.core_key_manager_inner)
             .read()
             .await
-            .get_partial_kernel_signature(
+            .get_txo_kernel_signature(
                 spend_key_id,
                 nonce_id,
                 total_nonce,
@@ -322,7 +322,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             .await
     }
 
-    async fn get_partial_kernel_signature_excess_with_offset(
+    async fn get_txo_kernel_signature_excess_with_offset(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         nonce_id: &KeyId<PublicKey>,
@@ -330,11 +330,11 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         (*self.core_key_manager_inner)
             .read()
             .await
-            .get_partial_kernel_signature_excess_with_offset(spend_key_id, nonce_id)
+            .get_txo_kernel_signature_excess_with_offset(spend_key_id, nonce_id)
             .await
     }
 
-    async fn get_partial_private_kernel_offset(
+    async fn get_txo_private_kernel_offset(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         nonce_id: &KeyId<PublicKey>,
@@ -342,7 +342,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         (*self.core_key_manager_inner)
             .read()
             .await
-            .get_partial_private_kernel_offset(spend_key_id, nonce_id)
+            .get_txo_private_kernel_offset(spend_key_id, nonce_id)
             .await
     }
 
@@ -405,7 +405,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         sender_offset_key_id: &KeyId<PublicKey>,
         ephemeral_pubkey: &PublicKey,
         ephemeral_commitment: &Commitment,
-        tx_version: &TransactionOutputVersion,
+        txo_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
         range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError> {
@@ -420,7 +420,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
                 sender_offset_key_id,
                 ephemeral_pubkey,
                 ephemeral_commitment,
-                tx_version,
+                txo_version,
                 metadata_signature_message,
                 range_proof_type,
             )
@@ -434,7 +434,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         ephemeral_commitment_nonce_id: &KeyId<PublicKey>,
         sender_offset_public_key: &PublicKey,
         ephemeral_pubkey: &PublicKey,
-        tx_version: &TransactionOutputVersion,
+        txo_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
         range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError> {
@@ -447,7 +447,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
                 ephemeral_commitment_nonce_id,
                 sender_offset_public_key,
                 ephemeral_pubkey,
-                tx_version,
+                txo_version,
                 metadata_signature_message,
                 range_proof_type,
             )
@@ -460,7 +460,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         sender_offset_key_id: &KeyId<PublicKey>,
         commitment: &Commitment,
         ephemeral_commitment: &Commitment,
-        tx_version: &TransactionOutputVersion,
+        txo_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
     ) -> Result<ComAndPubSignature, TransactionError> {
         (*self.core_key_manager_inner)
@@ -471,7 +471,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
                 sender_offset_key_id,
                 commitment,
                 ephemeral_commitment,
-                tx_version,
+                txo_version,
                 metadata_signature_message,
             )
             .await

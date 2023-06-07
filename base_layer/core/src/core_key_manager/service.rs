@@ -353,7 +353,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         script_key_id: &KeyId<PublicKey>,
         spend_key_id: &KeyId<PublicKey>,
         value: &PrivateKey,
-        tx_version: &TransactionInputVersion,
+        txi_version: &TransactionInputVersion,
         script_message: &[u8; 32],
     ) -> Result<ComAndPubSignature, TransactionError> {
         let r_a = PrivateKey::random(&mut OsRng);
@@ -366,7 +366,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         let spend_private_key = self.get_private_key(spend_key_id).await?;
 
         let challenge = TransactionInput::finalize_script_signature_challenge(
-            tx_version,
+            txi_version,
             &ephemeral_commitment,
             &ephemeral_pubkey,
             &PublicKey::from_secret_key(&script_private_key),
@@ -481,6 +481,8 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         range_proof_type: RangeProofType,
     ) -> Result<(PrivateKey, PrivateKey), TransactionError> {
         let nonce_private_key = self.get_private_key(nonce_id).await?;
+        // With BulletProofPlus type range proofs, the nonce is a secure random value
+        // With RevealedValue type range proofs, the nonce is always 0 and the minimum value promise equal to the value
         let nonce_a = match range_proof_type {
             RangeProofType::BulletProofPlus => {
                 let hasher_a = DomainSeparatedHasher::<Blake256, KeyManagerHashingDomain>::new_with_label(
@@ -524,7 +526,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         sender_offset_key_id: &KeyId<PublicKey>,
         ephemeral_pubkey: &PublicKey,
         ephemeral_commitment: &Commitment,
-        tx_version: &TransactionOutputVersion,
+        txo_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
         range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError> {
@@ -536,7 +538,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
                 ephemeral_commitment_nonce_id,
                 &sender_offset_public_key,
                 &ephemeral_pubkey,
-                tx_version,
+                txo_version,
                 metadata_signature_message,
                 range_proof_type,
             )
@@ -548,7 +550,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
                 sender_offset_key_id,
                 &commitment,
                 ephemeral_commitment,
-                tx_version,
+                txo_version,
                 metadata_signature_message,
             )
             .await?;
@@ -563,7 +565,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         ephemeral_commitment_nonce_id: &KeyId<PublicKey>,
         sender_offset_public_key: &PublicKey,
         ephemeral_pubkey: &PublicKey,
-        tx_version: &TransactionOutputVersion,
+        txo_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
         range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError> {
@@ -574,7 +576,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         let spend_private_key = self.get_private_key(spend_key_id).await?;
         let commitment = self.crypto_factories.commitment.commit(&spend_private_key, value);
         let challenge = TransactionOutput::finalize_metadata_signature_challenge(
-            tx_version,
+            txo_version,
             sender_offset_public_key,
             &ephemeral_commitment,
             ephemeral_pubkey,
@@ -601,7 +603,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         sender_offset_key_id: &KeyId<PublicKey>,
         commitment: &Commitment,
         ephemeral_commitment: &Commitment,
-        tx_version: &TransactionOutputVersion,
+        txo_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
     ) -> Result<ComAndPubSignature, TransactionError> {
         let ephemeral_private_key = self.get_private_key(ephemeral_private_nonce_id).await?;
@@ -610,7 +612,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         let sender_offset_public_key = PublicKey::from_secret_key(&sender_offset_private_key);
 
         let challenge = TransactionOutput::finalize_metadata_signature_challenge(
-            tx_version,
+            txo_version,
             &sender_offset_public_key,
             ephemeral_commitment,
             &ephemeral_pubkey,
@@ -635,7 +637,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     // Transaction kernel section (transactions > transaction_components > transaction_kernel)
     // -----------------------------------------------------------------------------------------------------------------
 
-    pub async fn get_partial_private_kernel_offset(
+    pub async fn get_txo_private_kernel_offset(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         nonce_id: &KeyId<PublicKey>,
@@ -652,9 +654,9 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         })
     }
 
-    pub async fn get_partial_kernel_signature(
+    pub async fn get_txo_kernel_signature(
         &self,
-        spending_key: &KeyId<PublicKey>,
+        spending_key_id: &KeyId<PublicKey>,
         nonce_id: &KeyId<PublicKey>,
         total_nonce: &PublicKey,
         total_excess: &PublicKey,
@@ -663,12 +665,12 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         kernel_features: &KernelFeatures,
         txo_type: TxoType,
     ) -> Result<Signature, TransactionError> {
-        let private_key = self.get_private_key(spending_key).await?;
+        let private_key = self.get_private_key(spending_key_id).await?;
         // we cannot use an offset with a coinbase tx as this will not allow us to check the coinbase commitment
         let private_signing_key = if kernel_features.is_coinbase() {
             private_key
         } else {
-            private_key - &self.get_partial_private_kernel_offset(spending_key, nonce_id).await?
+            private_key - &self.get_txo_private_kernel_offset(spending_key_id, nonce_id).await?
         };
 
         let final_signing_key = if txo_type == TxoType::Output {
@@ -689,13 +691,13 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         Ok(signature)
     }
 
-    pub async fn get_partial_kernel_signature_excess_with_offset(
+    pub async fn get_txo_kernel_signature_excess_with_offset(
         &self,
         spend_key_id: &KeyId<PublicKey>,
         nonce_id: &KeyId<PublicKey>,
     ) -> Result<PublicKey, TransactionError> {
         let private_key = self.get_private_key(spend_key_id).await?;
-        let offset = self.get_partial_private_kernel_offset(spend_key_id, nonce_id).await?;
+        let offset = self.get_txo_private_kernel_offset(spend_key_id, nonce_id).await?;
         let excess = private_key - &offset;
         Ok(PublicKey::from_secret_key(&excess))
     }

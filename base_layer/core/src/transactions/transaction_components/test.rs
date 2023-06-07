@@ -36,7 +36,10 @@ use super::*;
 use crate::{
     consensus::ConsensusManager,
     core_key_manager::BaseLayerKeyManagerInterface,
-    test_helpers::create_test_core_key_manager_with_memory_db,
+    test_helpers::{
+        create_test_core_key_manager_with_memory_db,
+        create_test_core_key_manager_with_memory_db_with_range_proof_size,
+    },
     transactions::{
         tari_amount::{uT, MicroTari, T},
         test_helpers,
@@ -48,7 +51,6 @@ use crate::{
     txn_schema,
     validation::{transaction::TransactionInternalConsistencyValidator, ValidationError},
 };
-use crate::test_helpers::create_test_core_key_manager_with_memory_db_with_range_proof_size;
 
 #[tokio::test]
 async fn input_and_output_and_key_manager_output_hash_match() {

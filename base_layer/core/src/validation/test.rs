@@ -32,12 +32,17 @@ use crate::{
     blocks::{BlockHeader, BlockHeaderAccumulatedData, ChainBlock, ChainHeader},
     chain_storage::{BlockchainBackend, BlockchainDatabase, ChainStorageError, DbTransaction},
     consensus::{ConsensusConstantsBuilder, ConsensusManager, ConsensusManagerBuilder},
+    core_key_manager::TxoType,
     covenants::Covenant,
     proof_of_work::AchievedTargetDifficulty,
-    test_helpers::{blockchain::create_store_with_consensus, create_chain_header},
+    test_helpers::{
+        blockchain::create_store_with_consensus,
+        create_chain_header,
+        create_test_core_key_manager_with_memory_db,
+    },
     transactions::{
         tari_amount::{uT, MicroTari},
-        test_helpers::{create_random_signature_from_s_key, create_utxo},
+        test_helpers::{create_random_signature_from_secret_key, create_utxo},
         transaction_components::{KernelBuilder, KernelFeatures, OutputFeatures, TransactionKernel},
         CryptoFactories,
     },
@@ -118,22 +123,32 @@ mod header_validators {
     }
 }
 
-#[test]
+#[tokio::test]
 #[allow(clippy::too_many_lines)]
-fn chain_balance_validation() {
+async fn chain_balance_validation() {
     let factories = CryptoFactories::default();
     let consensus_manager = ConsensusManagerBuilder::new(Network::Esmeralda).build();
     let genesis = consensus_manager.get_genesis_block();
     let faucet_value = 5000 * uT;
-    let (faucet_utxo, faucet_key, _) = create_utxo(
+    let key_manager = create_test_core_key_manager_with_memory_db();
+    let (faucet_utxo, faucet_key_id, _) = create_utxo(
         faucet_value,
-        &factories,
+        &key_manager,
         &OutputFeatures::default(),
         &script!(Nop),
         &Covenant::default(),
         MicroTari::zero(),
-    );
-    let (pk, sig) = create_random_signature_from_s_key(faucet_key, 0.into(), 0, KernelFeatures::empty());
+    )
+    .await;
+    let (pk, sig) = create_random_signature_from_secret_key(
+        &key_manager,
+        faucet_key_id,
+        0.into(),
+        0,
+        KernelFeatures::empty(),
+        TxoType::Output,
+    )
+    .await;
     let excess = Commitment::from_public_key(&pk);
     let kernel =
         TransactionKernel::new_current_version(KernelFeatures::empty(), MicroTari::from(0), 0, excess, sig, None);
@@ -173,16 +188,25 @@ fn chain_balance_validation() {
     //---------------------------------- Add a new coinbase and header --------------------------------------------//
     let mut txn = DbTransaction::new();
     let coinbase_value = consensus_manager.get_block_reward_at(1);
-    let (coinbase, coinbase_key, _) = create_utxo(
+    let (coinbase, coinbase_key_id, _) = create_utxo(
         coinbase_value,
-        &factories,
+        &key_manager,
         &OutputFeatures::create_coinbase(1, None),
         &script!(Nop),
         &Covenant::default(),
         MicroTari::zero(),
-    );
+    )
+    .await;
     // let _coinbase_hash = coinbase.hash();
-    let (pk, sig) = create_random_signature_from_s_key(coinbase_key, 0.into(), 0, KernelFeatures::create_coinbase());
+    let (pk, sig) = create_random_signature_from_secret_key(
+        &key_manager,
+        coinbase_key_id,
+        0.into(),
+        0,
+        KernelFeatures::create_coinbase(),
+        TxoType::Output,
+    )
+    .await;
     let excess = Commitment::from_public_key(&pk);
     let kernel = KernelBuilder::new()
         .with_signature(sig)
@@ -226,15 +250,24 @@ fn chain_balance_validation() {
     let mut txn = DbTransaction::new();
 
     let v = consensus_manager.get_block_reward_at(2) + uT;
-    let (coinbase, key, _) = create_utxo(
+    let (coinbase, spending_key_id, _) = create_utxo(
         v,
-        &factories,
+        &key_manager,
         &OutputFeatures::create_coinbase(1, None),
         &script!(Nop),
         &Covenant::default(),
         MicroTari::zero(),
-    );
-    let (pk, sig) = create_random_signature_from_s_key(key, 0.into(), 0, KernelFeatures::create_coinbase());
+    )
+    .await;
+    let (pk, sig) = create_random_signature_from_secret_key(
+        &key_manager,
+        spending_key_id,
+        0.into(),
+        0,
+        KernelFeatures::create_coinbase(),
+        TxoType::Output,
+    )
+    .await;
     let excess = Commitment::from_public_key(&pk);
     let kernel = KernelBuilder::new()
         .with_signature(sig)
@@ -274,22 +307,32 @@ fn chain_balance_validation() {
         .unwrap_err();
 }
 
-#[test]
+#[tokio::test]
 #[allow(clippy::too_many_lines)]
-fn chain_balance_validation_burned() {
+async fn chain_balance_validation_burned() {
     let factories = CryptoFactories::default();
     let consensus_manager = ConsensusManagerBuilder::new(Network::Esmeralda).build();
     let genesis = consensus_manager.get_genesis_block();
     let faucet_value = 5000 * uT;
-    let (faucet_utxo, faucet_key, _) = create_utxo(
+    let key_manager = create_test_core_key_manager_with_memory_db();
+    let (faucet_utxo, faucet_key_id, _) = create_utxo(
         faucet_value,
-        &factories,
+        &key_manager,
         &OutputFeatures::default(),
         &script!(Nop),
         &Covenant::default(),
         MicroTari::zero(),
-    );
-    let (pk, sig) = create_random_signature_from_s_key(faucet_key, 0.into(), 0, KernelFeatures::empty());
+    )
+    .await;
+    let (pk, sig) = create_random_signature_from_secret_key(
+        &key_manager,
+        faucet_key_id,
+        0.into(),
+        0,
+        KernelFeatures::empty(),
+        TxoType::Output,
+    )
+    .await;
     let excess = Commitment::from_public_key(&pk);
     let kernel =
         TransactionKernel::new_current_version(KernelFeatures::empty(), MicroTari::from(0), 0, excess, sig, None);
@@ -329,15 +372,24 @@ fn chain_balance_validation_burned() {
     //---------------------------------- Add block (coinbase + burned) --------------------------------------------//
     let mut txn = DbTransaction::new();
     let coinbase_value = consensus_manager.get_block_reward_at(1) - MicroTari::from(100);
-    let (coinbase, coinbase_key, _) = create_utxo(
+    let (coinbase, coinbase_key_id, _) = create_utxo(
         coinbase_value,
-        &factories,
+        &key_manager,
         &OutputFeatures::create_coinbase(1, None),
         &script!(Nop),
         &Covenant::default(),
         MicroTari::zero(),
-    );
-    let (pk, sig) = create_random_signature_from_s_key(coinbase_key, 0.into(), 0, KernelFeatures::create_coinbase());
+    )
+    .await;
+    let (pk, sig) = create_random_signature_from_secret_key(
+        &key_manager,
+        coinbase_key_id,
+        0.into(),
+        0,
+        KernelFeatures::create_coinbase(),
+        TxoType::Output,
+    )
+    .await;
     let excess = Commitment::from_public_key(&pk);
     let kernel = KernelBuilder::new()
         .with_signature(sig)
@@ -346,16 +398,25 @@ fn chain_balance_validation_burned() {
         .build()
         .unwrap();
 
-    let (burned, burned_key, _) = create_utxo(
+    let (burned, burned_key_id, _) = create_utxo(
         100.into(),
-        &factories,
+        &key_manager,
         &OutputFeatures::create_burn_output(),
         &script!(Nop),
         &Covenant::default(),
         MicroTari::zero(),
-    );
+    )
+    .await;
 
-    let (pk2, sig2) = create_random_signature_from_s_key(burned_key, 0.into(), 0, KernelFeatures::create_burn());
+    let (pk2, sig2) = create_random_signature_from_secret_key(
+        &key_manager,
+        burned_key_id,
+        0.into(),
+        0,
+        KernelFeatures::create_burn(),
+        TxoType::Output,
+    )
+    .await;
     let excess2 = Commitment::from_public_key(&pk2);
     let kernel2 = KernelBuilder::new()
         .with_signature(sig2)

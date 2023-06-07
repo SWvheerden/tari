@@ -558,7 +558,7 @@ impl TestBlockchain {
 
     pub async fn create_chain(&self, block_specs: BlockSpecs) -> Vec<(Arc<ChainBlock>, KeyManagerOutput)> {
         let mut result = Vec::new();
-        for spec in block_specs.into_iter(){
+        for spec in block_specs.into_iter() {
             result.push(self.create_chained_block(spec).await);
         }
         result
@@ -597,7 +597,10 @@ impl TestBlockchain {
         Ok((block, coinbase))
     }
 
-    pub async fn add_next_tip(&mut self, spec: BlockSpec) -> Result<(Arc<ChainBlock>, KeyManagerOutput), ChainStorageError> {
+    pub async fn add_next_tip(
+        &mut self,
+        spec: BlockSpec,
+    ) -> Result<(Arc<ChainBlock>, KeyManagerOutput), ChainStorageError> {
         let name = spec.name;
         let (block, coinbase) = self.create_next_tip(spec).await;
         let result = self.append_block(name, block.clone())?;
@@ -654,7 +657,10 @@ impl TestBlockchain {
         self.create_chained_block(spec.with_parent_block(name)).await
     }
 
-    pub async fn append_to_tip(&mut self, spec: BlockSpec) -> Result<(Arc<ChainBlock>, KeyManagerOutput), ChainStorageError> {
+    pub async fn append_to_tip(
+        &mut self,
+        spec: BlockSpec,
+    ) -> Result<(Arc<ChainBlock>, KeyManagerOutput), ChainStorageError> {
         let (tip, _) = self.get_tip_block();
         self.append(spec.with_parent_block(tip)).await
     }

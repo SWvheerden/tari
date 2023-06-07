@@ -39,12 +39,12 @@ use tari_core::{
     core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TxoType},
     covenants::Covenant,
     proof_of_work::{sha3x_difficulty, AchievedTargetDifficulty, Difficulty},
-    test_helpers::TestKeyManager,
+    test_helpers::{create_test_core_key_manager_with_memory_db, TestKeyManager},
     transactions::{
         tari_amount::MicroTari,
         test_helpers::{
             create_key_manager_output_with_data,
-            create_random_signature_from_s_key,
+            create_random_signature_from_secret_key,
             create_utxo,
             spend_utxos,
             TestParams,
@@ -99,7 +99,7 @@ pub async fn create_coinbase(
     );
 
     let sig = key_manager
-        .get_partial_kernel_signature(
+        .get_txo_kernel_signature(
             &p.spend_key,
             &nonce,
             &public_nonce,
@@ -159,9 +159,9 @@ async fn genesis_template(
 /// --exact --nocapture`
 /// 1. The block and range proof will be printed
 /// 1. Profit!
-#[test]
-fn print_new_genesis_block_nextnet() {
-    print_new_genesis_block(Network::NextNet, "Mathematical proof that something happened");
+#[tokio::test]
+async fn print_new_genesis_block_nextnet() {
+    print_new_genesis_block(Network::NextNet, "Mathematical proof that something happened").await;
 }
 
 // #[ignore = "used to generate a new stagenet genesis block"]
@@ -170,9 +170,9 @@ fn print_new_genesis_block_nextnet() {
 /// --exact --nocapture`
 /// 1. The block and range proof will be printed
 /// 1. Profit!
-#[test]
-fn print_new_genesis_block_stagenet() {
-    print_new_genesis_block(Network::StageNet, "Tokenized and connected");
+#[tokio::test]
+async fn print_new_genesis_block_stagenet() {
+    print_new_genesis_block(Network::StageNet, "Tokenized and connected").await;
 }
 
 // #[ignore = "used to generate a new esmeralda genesis block"]
@@ -181,9 +181,9 @@ fn print_new_genesis_block_stagenet() {
 /// --exact --nocapture`
 /// 1. The block and range proof will be printed
 /// 1. Profit!
-#[test]
-fn print_new_genesis_block_esmeralda() {
-    print_new_genesis_block(Network::Esmeralda, "Queues happen to other people");
+#[tokio::test]
+async fn print_new_genesis_block_esmeralda() {
+    print_new_genesis_block(Network::Esmeralda, "Queues happen to other people").await;
 }
 
 // #[ignore = "used to generate a new igor genesis block"]
@@ -192,26 +192,35 @@ fn print_new_genesis_block_esmeralda() {
 /// --exact --nocapture`
 /// 1. The block and range proof will be printed
 /// 1. Profit!
-#[test]
-fn print_new_genesis_block_igor() {
-    print_new_genesis_block(Network::Igor, "Hello, Igor");
+#[tokio::test]
+async fn print_new_genesis_block_igor() {
+    print_new_genesis_block(Network::Igor, "Hello, Igor").await;
 }
 
-fn print_new_genesis_block(network: Network, extra: &str) {
+async fn print_new_genesis_block(network: Network, extra: &str) {
     let consensus_manager: ConsensusManager = ConsensusManagerBuilder::new(network).build();
-    let factories = CryptoFactories::default();
     let mut header = BlockHeader::new(consensus_manager.consensus_constants(0).blockchain_version());
     let value = consensus_manager.emission_schedule().block_reward(0);
     let lock_height = consensus_manager.consensus_constants(0).coinbase_lock_height();
-    let (utxo, key, _) = create_utxo(
+    let key_manager = create_test_core_key_manager_with_memory_db();
+    let (utxo, spending_key_id, _) = create_utxo(
         value,
-        &factories,
+        &key_manager,
         &OutputFeatures::create_coinbase(lock_height, Some(extra.as_bytes().to_vec())),
         &script![Nop],
         &Covenant::default(),
         MicroTari::zero(),
-    );
-    let (pk, sig) = create_random_signature_from_s_key(key, 0.into(), 0, KernelFeatures::COINBASE_KERNEL);
+    )
+    .await;
+    let (pk, sig) = create_random_signature_from_secret_key(
+        &key_manager,
+        spending_key_id,
+        0.into(),
+        0,
+        KernelFeatures::COINBASE_KERNEL,
+        TxoType::Output,
+    )
+    .await;
     let excess = Commitment::from_public_key(&pk);
     let kernel = KernelBuilder::new()
         .with_signature(sig)
@@ -257,7 +266,7 @@ fn print_new_genesis_block(network: Network, extra: &str) {
     println!();
     println!("{} genesis block", network);
     println!();
-    println!("extra '{}'", extra);
+    println!("extra: '{}'", extra);
     println!(
         "kernel excess_sig: public_nonce {} signature {}",
         block.body.kernels()[0].excess_sig.get_public_nonce().to_hex(),
@@ -280,6 +289,10 @@ fn print_new_genesis_block(network: Network, extra: &str) {
     println!("Genesis coinbase maturity: {}", lock_height);
     println!("UTXO commitment: {}", block.body.outputs()[0].commitment.to_hex());
     println!("UTXO range_proof: {}", block.body.outputs()[0].proof_hex_display(true));
+    println!(
+        "Encrypted data: {}",
+        block.body.outputs()[0].encrypted_data.hex_display(true)
+    );
     println!(
         "UTXO sender offset pubkey: {}",
         block.body.outputs()[0].sender_offset_public_key.to_hex()
