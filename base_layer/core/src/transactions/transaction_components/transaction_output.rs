@@ -48,14 +48,13 @@ use tari_crypto::{
     ristretto::bulletproofs_plus::RistrettoAggregatedPublicStatement,
     tari_utilities::{hex::Hex, ByteArray},
 };
-use tari_key_manager::key_manager_service::KeyId;
 use tari_script::TariScript;
 
 use super::TransactionOutputVersion;
 use crate::{
     borsh::SerializedSize,
     consensus::DomainSeparatedConsensusHasher,
-    core_key_manager::BaseLayerKeyManagerInterface,
+    core_key_manager::{BaseLayerKeyManagerInterface, TariKeyId},
     covenants::Covenant,
     transactions::{
         tari_amount::MicroTari,
@@ -331,7 +330,7 @@ impl TransactionOutput {
         &self,
         key_manager: &KM,
         prover: &RangeProofService,
-        spending_key_id: &KeyId<PublicKey>,
+        spending_key_id: &TariKeyId,
         value: u64,
     ) -> Result<bool, TransactionError> {
         Ok(key_manager

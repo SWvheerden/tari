@@ -28,13 +28,13 @@ use tari_common_types::{
     transaction::TxId,
     types::{Commitment, PrivateKey, PublicKey, Signature},
 };
-use tari_key_manager::key_manager_service::{KeyId, KeyManagerServiceError};
+use tari_key_manager::key_manager_service::KeyManagerServiceError;
 use tari_script::{ExecutionStack, TariScript};
 
 use crate::{
     borsh::SerializedSize,
     consensus::ConsensusConstants,
-    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch},
+    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TariKeyId},
     covenants::Covenant,
     transactions::{
         fee::Fee,
@@ -58,11 +58,11 @@ use crate::{
 pub const LOG_TARGET: &str = "c::tx::tx_protocol::tx_initializer";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(super) struct ChangeDetails {
-    change_secret_key_id: KeyId<PublicKey>,
+    change_secret_key_id: TariKeyId,
     change_script: TariScript,
     change_input_data: ExecutionStack,
-    change_script_key_id: KeyId<PublicKey>,
-    change_sender_offset_key_id: KeyId<PublicKey>,
+    change_script_key_id: TariKeyId,
+    change_sender_offset_key_id: TariKeyId,
     change_covenant: Covenant,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -70,10 +70,10 @@ pub(super) struct RecipientDetails {
     pub amount: MicroTari,
     pub recipient_output_features: OutputFeatures,
     pub recipient_script: TariScript,
-    pub recipient_sender_offset_key_id: KeyId<PublicKey>,
+    pub recipient_sender_offset_key_id: TariKeyId,
     pub recipient_covenant: Covenant,
     pub recipient_minimum_value_promise: MicroTari,
-    pub recipient_ephemeral_public_key_nonce: KeyId<PublicKey>,
+    pub recipient_ephemeral_public_key_nonce: TariKeyId,
 }
 
 /// The SenderTransactionProtocolBuilder is a Builder that helps set up the initial state for the Sender party of a new
@@ -145,7 +145,7 @@ where KM: BaseLayerKeyManagerInterface
     pub async fn with_recipient_data(
         &mut self,
         recipient_script: TariScript,
-        recipient_sender_offset_key_id: KeyId<PublicKey>,
+        recipient_sender_offset_key_id: TariKeyId,
         recipient_output_features: OutputFeatures,
         recipient_covenant: Covenant,
         recipient_minimum_value_promise: MicroTari,
@@ -193,7 +193,7 @@ where KM: BaseLayerKeyManagerInterface
     pub async fn with_output(
         &mut self,
         output: KeyManagerOutput,
-        sender_offset_key_id: KeyId<PublicKey>,
+        sender_offset_key_id: TariKeyId,
     ) -> Result<&mut Self, KeyManagerServiceError> {
         let nonce_id = self
             .key_manager
@@ -214,9 +214,9 @@ where KM: BaseLayerKeyManagerInterface
         &mut self,
         change_script: TariScript,
         change_input_data: ExecutionStack,
-        change_script_key_id: KeyId<PublicKey>,
-        change_secret_key_id: KeyId<PublicKey>,
-        change_sender_offset_key_id: KeyId<PublicKey>,
+        change_script_key_id: TariKeyId,
+        change_secret_key_id: TariKeyId,
+        change_sender_offset_key_id: TariKeyId,
         change_covenant: Covenant,
     ) -> &mut Self {
         let details = ChangeDetails {
@@ -297,7 +297,7 @@ where KM: BaseLayerKeyManagerInterface
     #[allow(clippy::too_many_lines)]
     async fn add_change_if_required(
         &mut self,
-    ) -> Result<(MicroTari, MicroTari, Option<(KeyManagerOutput, KeyId<PublicKey>)>), String> {
+    ) -> Result<(MicroTari, MicroTari, Option<(KeyManagerOutput, TariKeyId)>), String> {
         // The number of outputs excluding a possible residual change output
         let num_outputs = self.sender_custom_outputs.len() + if self.recipient.is_some() { 1 } else { 0 };
         let num_inputs = self.inputs.len();

@@ -34,7 +34,7 @@ use tari_script::TariScript;
 use super::CalculateTxIdTransactionProtocolHasherBlake256;
 use crate::{
     consensus::ConsensusConstants,
-    core_key_manager::{BaseLayerKeyManagerInterface, TxoType},
+    core_key_manager::{BaseLayerKeyManagerInterface, TariKeyId, TxoType},
     covenants::Covenant,
     transactions::{
         fee::Fee,
@@ -64,8 +64,8 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct OutputPair {
     pub output: KeyManagerOutput,
-    pub kernel_nonce: KeyId<PublicKey>,
-    pub sender_offset_key_id: Option<KeyId<PublicKey>>,
+    pub kernel_nonce: TariKeyId,
+    pub sender_offset_key_id: Option<TariKeyId>,
 }
 
 /// This struct contains all the information that a transaction initiator (the sender) will manage throughout the
@@ -300,7 +300,7 @@ impl SenderTransactionProtocol {
     }
 
     /// This function will return the script offset private keys for a single recipient
-    pub fn get_recipient_sender_offset_private_key(&self) -> Result<Option<KeyId<PublicKey>>, TPE> {
+    pub fn get_recipient_sender_offset_private_key(&self) -> Result<Option<TariKeyId>, TPE> {
         match &self.state {
             SenderState::Initializing(info) |
             SenderState::Finalizing(info) |

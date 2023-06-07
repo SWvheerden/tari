@@ -26,14 +26,14 @@ use rand::rngs::OsRng;
 use tari_common::configuration::Network;
 use tari_common_types::types::{Commitment, PrivateKey, PublicKey, Signature};
 use tari_crypto::keys::{PublicKey as PK, SecretKey};
-use tari_key_manager::key_manager_service::{KeyId, KeyManagerInterface};
+use tari_key_manager::key_manager_service::KeyManagerInterface;
 use tari_script::{inputs, script, ExecutionStack, TariScript};
 
 use super::transaction_components::{TransactionInputVersion, TransactionOutputVersion};
 use crate::{
     borsh::SerializedSize,
     consensus::ConsensusManager,
-    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TxoType},
+    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TariKeyId, TxoType},
     covenants::Covenant,
     test_helpers::{create_test_core_key_manager_with_memory_db, TestKeyManager},
     transactions::{
@@ -77,12 +77,12 @@ pub async fn create_test_input(amount: MicroTari, maturity: u64, key_manager: &T
 
 #[derive(Clone)]
 pub struct TestParams {
-    pub spend_key: KeyId<PublicKey>,
-    pub kernel_nonce: KeyId<PublicKey>,
-    pub change_spend_key: KeyId<PublicKey>,
-    pub script_private_key: KeyId<PublicKey>,
-    pub sender_offset_private_key: KeyId<PublicKey>,
-    pub ephemeral_public_nonce: KeyId<PublicKey>,
+    pub spend_key: TariKeyId,
+    pub kernel_nonce: TariKeyId,
+    pub change_spend_key: TariKeyId,
+    pub script_private_key: TariKeyId,
+    pub sender_offset_private_key: TariKeyId,
+    pub ephemeral_public_nonce: TariKeyId,
     pub transaction_weight: TransactionWeight,
 }
 
@@ -256,7 +256,7 @@ pub fn create_signature(k: PrivateKey, fee: MicroTari, lock_height: u64, feature
 /// Generate a random transaction signature given a key, returning the public key (excess) and the signature.
 pub async fn create_random_signature_from_secret_key(
     key_manager: &TestKeyManager,
-    secret_key_id: KeyId<PublicKey>,
+    secret_key_id: TariKeyId,
     fee: MicroTari,
     lock_height: u64,
     kernel_features: KernelFeatures,
@@ -513,7 +513,7 @@ pub async fn create_key_manager_txos(
     output_script: &TariScript,
     output_covenant: &Covenant,
     key_manager: &TestKeyManager,
-) -> (Vec<KeyManagerOutput>, Vec<(KeyManagerOutput, KeyId<PublicKey>)>) {
+) -> (Vec<KeyManagerOutput>, Vec<(KeyManagerOutput, TariKeyId)>) {
     let weighting = TransactionWeight::latest();
     // This is a best guess to not underestimate metadata size
     let output_features_and_scripts_size = weighting.round_up_features_and_scripts_size(
@@ -588,7 +588,7 @@ pub async fn create_transaction_with(
     lock_height: u64,
     fee_per_gram: MicroTari,
     inputs: Vec<KeyManagerOutput>,
-    outputs: Vec<(KeyManagerOutput, KeyId<PublicKey>)>,
+    outputs: Vec<(KeyManagerOutput, TariKeyId)>,
     key_manager: &TestKeyManager,
 ) -> Transaction {
     let stx_protocol = create_sender_transaction_protocol_with(lock_height, fee_per_gram, inputs, outputs, key_manager)
@@ -601,7 +601,7 @@ pub async fn create_sender_transaction_protocol_with(
     lock_height: u64,
     fee_per_gram: MicroTari,
     inputs: Vec<KeyManagerOutput>,
-    outputs: Vec<(KeyManagerOutput, KeyId<PublicKey>)>,
+    outputs: Vec<(KeyManagerOutput, TariKeyId)>,
     key_manager: &TestKeyManager,
 ) -> Result<SenderTransactionProtocol, TransactionProtocolError> {
     let rules = ConsensusManager::builder(Network::LocalNet).build();
@@ -806,10 +806,7 @@ pub async fn create_stx_protocol(
     (stx_protocol, outputs)
 }
 
-pub async fn create_coinbase_kernel(
-    spending_key_id: &KeyId<PublicKey>,
-    key_manager: &TestKeyManager,
-) -> TransactionKernel {
+pub async fn create_coinbase_kernel(spending_key_id: &TariKeyId, key_manager: &TestKeyManager) -> TransactionKernel {
     let kernel_version = TransactionKernelVersion::get_current_version();
     let kernel_features = KernelFeatures::COINBASE_KERNEL;
     let kernel_message =
@@ -864,7 +861,7 @@ pub async fn create_utxo(
     script: &TariScript,
     covenant: &Covenant,
     minimum_value_promise: MicroTari,
-) -> (TransactionOutput, KeyId<PublicKey>, KeyId<PublicKey>) {
+) -> (TransactionOutput, TariKeyId, TariKeyId) {
     let spending_key_id = key_manager
         .get_next_key_id(CoreKeyManagerBranch::CommitmentMask.get_branch_key())
         .await

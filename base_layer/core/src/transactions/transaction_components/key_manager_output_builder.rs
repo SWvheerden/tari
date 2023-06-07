@@ -22,11 +22,10 @@
 
 use derivative::Derivative;
 use tari_common_types::types::{ComAndPubSignature, PublicKey};
-use tari_key_manager::key_manager_service::KeyId;
 use tari_script::{ExecutionStack, TariScript};
 
 use crate::{
-    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch},
+    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TariKeyId},
     covenants::Covenant,
     transactions::{
         tari_amount::MicroTari,
@@ -46,24 +45,24 @@ use crate::{
 pub struct KeyManagerOutputBuilder {
     version: TransactionOutputVersion,
     value: MicroTari,
-    spending_key_id: KeyId<PublicKey>,
+    spending_key_id: TariKeyId,
     features: OutputFeatures,
     script: Option<TariScript>,
     covenant: Covenant,
     input_data: Option<ExecutionStack>,
-    script_private_key_id: Option<KeyId<PublicKey>>,
+    script_private_key_id: Option<TariKeyId>,
     sender_offset_public_key: Option<PublicKey>,
     metadata_signature: Option<ComAndPubSignature>,
     metadata_signed_by_receiver: bool,
     metadata_signed_by_sender: bool,
     encrypted_data: EncryptedData,
-    custom_recovery_key_id: Option<KeyId<PublicKey>>,
+    custom_recovery_key_id: Option<TariKeyId>,
     minimum_value_promise: MicroTari,
 }
 
 #[allow(dead_code)]
 impl KeyManagerOutputBuilder {
-    pub fn new(value: MicroTari, spending_key_id: KeyId<PublicKey>) -> Self {
+    pub fn new(value: MicroTari, spending_key_id: TariKeyId) -> Self {
         Self {
             version: TransactionOutputVersion::get_current_version(),
             value,
@@ -118,7 +117,7 @@ impl KeyManagerOutputBuilder {
         Ok(self)
     }
 
-    pub fn with_script_private_key(mut self, script_private_key_id: KeyId<PublicKey>) -> Self {
+    pub fn with_script_private_key(mut self, script_private_key_id: TariKeyId) -> Self {
         self.script_private_key_id = Some(script_private_key_id);
         self
     }
@@ -152,7 +151,7 @@ impl KeyManagerOutputBuilder {
     pub async fn sign_as_sender_and_receiver_using_key_id<KM: BaseLayerKeyManagerInterface>(
         mut self,
         key_manager: &KM,
-        sender_offset_private_key_id: &KeyId<PublicKey>,
+        sender_offset_private_key_id: &TariKeyId,
     ) -> Result<Self, TransactionError> {
         let script = self
             .script

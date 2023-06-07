@@ -24,7 +24,7 @@ mod handle;
 pub use handle::CoreKeyManagerHandle;
 
 mod interface;
-pub use interface::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TxoType};
+pub use interface::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TariKeyId, TxoType};
 
 mod initializer;
 pub use initializer::CoreKeyManagerInitializer;

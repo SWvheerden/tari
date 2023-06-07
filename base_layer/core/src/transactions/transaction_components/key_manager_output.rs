@@ -30,13 +30,12 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use tari_common_types::types::{ComAndPubSignature, FixedHash, PublicKey};
-use tari_key_manager::key_manager_service::KeyId;
 use tari_script::{ExecutionStack, TariScript};
 
 use super::TransactionOutputVersion;
 use crate::{
     borsh::SerializedSize,
-    core_key_manager::BaseLayerKeyManagerInterface,
+    core_key_manager::{BaseLayerKeyManagerInterface, TariKeyId},
     covenants::Covenant,
     transactions::{
         tari_amount::MicroTari,
@@ -62,12 +61,12 @@ use crate::{
 pub struct KeyManagerOutput {
     pub version: TransactionOutputVersion,
     pub value: MicroTari,
-    pub spending_key_id: KeyId<PublicKey>,
+    pub spending_key_id: TariKeyId,
     pub features: OutputFeatures,
     pub script: TariScript,
     pub covenant: Covenant,
     pub input_data: ExecutionStack,
-    pub script_private_key_id: KeyId<PublicKey>,
+    pub script_private_key_id: TariKeyId,
     pub sender_offset_public_key: PublicKey,
     pub metadata_signature: ComAndPubSignature,
     pub script_lock_height: u64,
@@ -82,11 +81,11 @@ impl KeyManagerOutput {
     pub fn new(
         version: TransactionOutputVersion,
         value: MicroTari,
-        spending_key_id: KeyId<PublicKey>,
+        spending_key_id: TariKeyId,
         features: OutputFeatures,
         script: TariScript,
         input_data: ExecutionStack,
-        script_private_key_id: KeyId<PublicKey>,
+        script_private_key_id: TariKeyId,
         sender_offset_public_key: PublicKey,
         metadata_signature: ComAndPubSignature,
         script_lock_height: u64,
@@ -113,11 +112,11 @@ impl KeyManagerOutput {
 
     pub fn new_current_version(
         value: MicroTari,
-        spending_key_id: KeyId<PublicKey>,
+        spending_key_id: TariKeyId,
         features: OutputFeatures,
         script: TariScript,
         input_data: ExecutionStack,
-        script_private_key_id: KeyId<PublicKey>,
+        script_private_key_id: TariKeyId,
         sender_offset_public_key: PublicKey,
         metadata_signature: ComAndPubSignature,
         script_lock_height: u64,

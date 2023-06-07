@@ -21,8 +21,8 @@
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-use tari_common_types::types::{Commitment, PrivateKey, PublicKey};
-use tari_key_manager::key_manager_service::{KeyId, KeyManagerServiceError};
+use tari_common_types::types::{Commitment, PrivateKey};
+use tari_key_manager::key_manager_service::KeyManagerServiceError;
 use tari_script::{inputs, script, TariScript};
 use thiserror::Error;
 
@@ -31,7 +31,7 @@ use crate::{
         emission::{Emission, EmissionSchedule},
         ConsensusConstants,
     },
-    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TxoType},
+    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TariKeyId, TxoType},
     covenants::Covenant,
     transactions::{
         tari_amount::{uT, MicroTari},
@@ -88,8 +88,8 @@ pub struct CoinbaseBuilder<TKeyManagerInterface> {
     key_manager: TKeyManagerInterface,
     block_height: Option<u64>,
     fees: Option<MicroTari>,
-    spend_key_id: Option<KeyId<PublicKey>>,
-    script_key_id: Option<KeyId<PublicKey>>,
+    spend_key_id: Option<TariKeyId>,
+    script_key_id: Option<TariKeyId>,
     script: Option<TariScript>,
     covenant: Covenant,
     extra: Option<Vec<u8>>,
@@ -126,14 +126,14 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
     }
 
     /// Provides the spend key for this transaction. This will usually be provided by a miner's wallet instance.
-    pub fn with_spend_key_id(mut self, key: KeyId<PublicKey>) -> Self {
+    pub fn with_spend_key_id(mut self, key: TariKeyId) -> Self {
         self.spend_key_id = Some(key);
         self
     }
 
     /// Provides the script key for this transaction. This will usually be provided by a miner's wallet
     /// instance.
-    pub fn with_script_key_id(mut self, key: KeyId<PublicKey>) -> Self {
+    pub fn with_script_key_id(mut self, key: TariKeyId) -> Self {
         self.script_key_id = Some(key);
         self
     }
