@@ -29,7 +29,7 @@ use tari_comms_dht::domain_message::OutboundDomainMessage;
 use tari_core::{
     base_node::state_machine_service::states::{ListeningInfo, StateInfo, StatusInfo},
     consensus::{ConsensusConstantsBuilder, ConsensusManager},
-    core_key_manager::{BaseLayerKeyManagerInterface, TxoType},
+    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TxoType},
     mempool::{Mempool, MempoolConfig, MempoolServiceConfig, TxStorageResponse},
     proof_of_work::Difficulty,
     proto,
@@ -1113,22 +1113,20 @@ async fn consensus_validation_large_tx() {
     let amount_per_output = (amount - fee) / output_count as u64;
     let amount_for_last_output = (amount - fee) - amount_per_output * (output_count as u64 - 1);
     let mut key_manager_outputs = Vec::with_capacity(output_count);
-    let mut pub_excess = PublicKey::default();
-    let mut pub_nonce = PublicKey::default();
+    let input_kernel_nonce = key_manager
+        .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+        .await
+        .unwrap();
+    let mut pub_excess = PublicKey::default() -
+        key_manager
+            .get_txo_kernel_signature_excess_with_offset(&input.spending_key_id, &input_kernel_nonce)
+            .await
+            .unwrap();
+    let mut pub_nonce = key_manager.get_public_key_at_key_id(&input_kernel_nonce).await.unwrap();
     let mut sender_offsets = Vec::new();
+
     for i in 0..output_count {
         let test_params = TestParams::new(&key_manager).await;
-        pub_excess = &pub_excess +
-            &key_manager
-                .get_txo_kernel_signature_excess_with_offset(&test_params.spend_key, &test_params.kernel_nonce)
-                .await
-                .unwrap();
-        pub_nonce = &pub_nonce +
-            &key_manager
-                .get_public_key_at_key_id(&test_params.kernel_nonce)
-                .await
-                .unwrap();
-        sender_offsets.push(test_params.sender_offset_private_key.clone());
         let output_amount = if i < output_count - 1 {
             amount_per_output
         } else {
@@ -1143,6 +1141,17 @@ async fn consensus_validation_large_tx() {
         )
         .await
         .unwrap();
+        pub_excess = pub_excess +
+            key_manager
+                .get_txo_kernel_signature_excess_with_offset(&output.spending_key_id, &test_params.kernel_nonce)
+                .await
+                .unwrap();
+        pub_nonce = pub_nonce +
+            key_manager
+                .get_public_key_at_key_id(&test_params.kernel_nonce)
+                .await
+                .unwrap();
+        sender_offsets.push(test_params.sender_offset_private_key.clone());
 
         key_manager_outputs.push((output.clone(), test_params.kernel_nonce));
     }
@@ -1188,10 +1197,31 @@ async fn consensus_validation_large_tx() {
         agg_sig = &agg_sig + sig;
     }
 
+    offset = &offset -
+        &key_manager
+            .get_txo_private_kernel_offset(&input.spending_key_id, &input_kernel_nonce)
+            .await
+            .unwrap();
+    let sig = key_manager
+        .get_txo_kernel_signature(
+            &input.spending_key_id,
+            &input_kernel_nonce,
+            &pub_nonce,
+            &pub_excess,
+            &kernel_version,
+            &kernel_message,
+            &tx_meta.kernel_features,
+            TxoType::Input,
+        )
+        .await
+        .unwrap();
+    agg_sig = &agg_sig + sig;
+
     let kernel = KernelBuilder::new()
         .with_fee(fee)
         .with_lock_height(0)
-        .with_excess(&Commitment::from_public_key(&pub_nonce))
+        .with_excess(&Commitment::from_public_key(&pub_excess))
+        .with_features(tx_meta.kernel_features)
         .with_signature(agg_sig)
         .build()
         .unwrap();

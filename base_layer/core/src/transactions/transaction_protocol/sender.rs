@@ -374,42 +374,6 @@ impl SenderTransactionProtocol {
                 let amount = recipient_data.amount.clone();
                 let ephemeral_public_key_nonce = recipient_data.recipient_ephemeral_public_key_nonce.clone();
 
-                // // lets calculate the total sender kernel signature nonce
-                // let mut public_nonce = PublicKey::default();
-                // // lets calculate the total sender kernel exess
-                // let mut public_excess = PublicKey::default();
-                //
-                // for input in &info.inputs {
-                //     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&input.kernel_nonce).await?;
-                //     public_excess = public_excess -
-                //         key_manager
-                //             .get_partial_kernel_signature_excess_with_offset(
-                //                 &input.output.spending_key_id,
-                //                 &input.kernel_nonce,
-                //             )
-                //             .await?;
-                // }
-                // for output in &info.outputs {
-                //     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&output.kernel_nonce).await?;
-                //     public_excess = public_excess +
-                //         key_manager
-                //             .get_partial_kernel_signature_excess_with_offset(
-                //                 &output.output.spending_key_id,
-                //                 &output.kernel_nonce,
-                //             )
-                //             .await?;
-                // }
-                //
-                // if let Some(change) = &info.change_output {
-                //     public_nonce = public_nonce + key_manager.get_public_key_at_key_id(&change.kernel_nonce).await?;
-                //     public_excess = public_excess +
-                //         key_manager
-                //             .get_partial_kernel_signature_excess_with_offset(
-                //                 &change.output.spending_key_id,
-                //                 &change.kernel_nonce,
-                //             )
-                //             .await?;
-                // }
                 let (public_nonce, public_excess) =
                     SenderTransactionProtocol::calculate_total_nonce_and_total_public_excess(&info, key_manager)
                         .await?;
