@@ -393,13 +393,12 @@ mod orphan_validator {
                     .build(),
             )
             .build();
-        let key_manager = create_test_core_key_manager_with_memory_db();
         let mut blockchain = TestBlockchain::create(rules.clone());
         let validator = BlockBodyInternalConsistencyValidator::new(rules, false, CryptoFactories::default());
         let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).unwrap();
 
         let schema = txn_schema!(from: vec![coinbase], to: vec![201 * T]);
-        let (tx, _) = schema_to_transaction(&[schema], &key_manager).await;
+        let (tx, _) = schema_to_transaction(&[schema], &blockchain.km).await;
 
         let transactions = tx.into_iter().map(|b| Arc::try_unwrap(b).unwrap()).collect::<Vec<_>>();
 

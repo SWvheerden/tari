@@ -691,60 +691,7 @@ pub async fn create_stx_protocol(
         );
 
     for tx_input in &schema.from {
-        let input = tx_input.clone();
-
-        // // We cant use as_transaction_input as we might want to change the version, so lets create a custom input
-        // here let version = schema
-        //     .input_version
-        //     .unwrap_or_else(TransactionInputVersion::get_current_version);
-        // let commitment = key_manager
-        //     .get_commitment(&input.spending_key_id, &input.value.into())
-        //     .await
-        //     .unwrap();
-        // let r_a = PrivateKey::random(&mut OsRng);
-        // let r_x = PrivateKey::random(&mut OsRng);
-        // let r_y = PrivateKey::random(&mut OsRng);
-        // let ephemeral_commitment = factories.commitment.commit(&r_x, &r_a);
-        // let ephemeral_pubkey = PublicKey::from_secret_key(&r_y);
-        //
-        // let challenge = TransactionInput::build_script_signature_challenge(
-        //     &version,
-        //     &ephemeral_commitment,
-        //     &ephemeral_pubkey,
-        //     &input.script,
-        //     &input.input_data,
-        //     &PublicKey::from_secret_key(&input.script_private_key),
-        //     &commitment,
-        // );
-        // let script_signature = ComAndPubSignature::sign(
-        //     &input.value.into(),
-        //     &input.spending_key,
-        //     &input.script_private_key,
-        //     &r_a,
-        //     &r_x,
-        //     &r_y,
-        //     &challenge,
-        //     &*factories.commitment,
-        // )
-        // .unwrap();
-        //
-        // let utxo = TransactionInput::new(
-        //     version,
-        //     SpentOutput::OutputData {
-        //         features: input.features.clone(),
-        //         commitment,
-        //         script: input.script.clone(),
-        //         sender_offset_public_key: input.sender_offset_public_key.clone(),
-        //         covenant: input.covenant.clone(),
-        //         version: input.version,
-        //         encrypted_data: input.encrypted_data,
-        //         minimum_value_promise: input.minimum_value_promise,
-        //     },
-        //     input.input_data.clone(),
-        //     script_signature,
-        // );
-
-        stx_builder.with_input(input.clone()).await.unwrap();
+        stx_builder.with_input(tx_input.clone()).await.unwrap();
     }
     let mut outputs = Vec::with_capacity(schema.to.len());
     for val in schema.to {
@@ -791,23 +738,9 @@ pub async fn create_stx_protocol(
             .unwrap();
 
         outputs.push(output.clone());
-        stx_builder.with_output(output, script_key_id).await.unwrap();
+        stx_builder.with_output(output, sender_offset_key_id).await.unwrap();
     }
     for mut utxo in schema.to_outputs {
-        // utxo.metadata_signature = TransactionOutput::create_metadata_signature(
-        //     output_version,
-        //     utxo.value,
-        //     &utxo.spending_key,
-        //     &utxo.script,
-        //     &utxo.features,
-        //     &test_params.sender_offset_private_key,
-        //     &utxo.covenant,
-        //     &utxo.encrypted_data,
-        //     utxo.minimum_value_promise,
-        // )
-        // .unwrap();
-        // utxo.sender_offset_public_key = test_params.sender_offset_public_key;
-        // outputs.push(utxo.clone());
 
         let sender_offset_key_id = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
