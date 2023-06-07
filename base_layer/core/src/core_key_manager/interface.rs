@@ -96,7 +96,7 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
 
     async fn get_recovery_key_id(&self) -> Result<TariKeyId, KeyManagerServiceError>;
 
-    async fn get_next_spend_and_script_key_ids(&self) -> Result<(TariKeyId, TariKeyId), KeyManagerServiceError>;
+    async fn get_next_spend_and_script_key_ids(&self) -> Result<(TariKeyId, PublicKey, TariKeyId, PublicKey), KeyManagerServiceError>;
 
     async fn get_diffie_hellman_shared_secret(
         &self,

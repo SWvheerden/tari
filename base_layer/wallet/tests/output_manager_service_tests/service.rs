@@ -40,12 +40,12 @@ use tari_core::{
     core_key_manager::CoreKeyManagerHandle,
     covenants::Covenant,
     proto::base_node::{QueryDeletedResponse, UtxoQueryResponse, UtxoQueryResponses},
-    test_helpers::create_test_core_key_manager_with_memory_db,
+    test_helpers::{create_test_core_key_manager_with_memory_db, TestKeyManager},
     transactions::{
         fee::Fee,
         tari_amount::{uT, MicroTari},
         test_helpers::{create_key_manager_output_with_data, TestParams as TestParamsHelpers},
-        transaction_components::{EncryptedData, OutputFeatures, OutputType, TransactionOutput, UnblindedOutput},
+        transaction_components::{EncryptedData, KeyManagerOutput, OutputFeatures, OutputType, TransactionOutput},
         transaction_protocol::{sender::TransactionSenderMessage, RecoveryData, TransactionMetadata},
         weight::TransactionWeight,
         CryptoFactories,
@@ -111,7 +111,7 @@ fn default_features_and_scripts_size_byte_size() -> usize {
     )
 }
 
-struct TestOmsService<U> {
+struct TestOmsService {
     pub output_manager_handle: OutputManagerHandle,
     pub wallet_connectivity_mock: WalletConnectivityMock,
     pub _shutdown: Shutdown,
@@ -120,17 +120,16 @@ struct TestOmsService<U> {
     pub node_id: Arc<NodeIdentity>,
     pub base_node_wallet_rpc_mock_state: BaseNodeWalletRpcMockState,
     pub node_event: broadcast::Sender<Arc<BaseNodeEvent>>,
-    pub key_manager_handler: CoreKeyManagerHandle<U>,
+    pub key_manager_handle: TestKeyManager,
     pub recovery_data: RecoveryData,
 }
 
 #[allow(clippy::type_complexity)]
 #[allow(clippy::too_many_lines)]
-async fn setup_output_manager_service<T: OutputManagerBackend + 'static, U: KeyManagerBackend<PublicKey> + 'static>(
+async fn setup_output_manager_service<T: OutputManagerBackend + 'static>(
     backend: T,
-    ks_backend: U,
     with_connection: bool,
-) -> TestOmsService<U> {
+) -> TestOmsService {
     let shutdown = Shutdown::new();
     let factories = CryptoFactories::default();
 
@@ -176,19 +175,7 @@ async fn setup_output_manager_service<T: OutputManagerBackend + 'static, U: KeyM
         wallet_connectivity_mock.set_base_node_wallet_rpc_client(connect_rpc_client(&mut connection).await);
     }
 
-    let words = [
-        "scan", "announce", "neither", "belt", "grace", "arch", "sting", "butter", "run", "frost", "debris", "slide",
-        "glory", "nature", "asthma", "fame", "during", "silly", "panda", "picnic", "run", "small", "engage", "pride",
-    ];
-    let seed_words = SeedWords::new(words.iter().map(|s| Hidden::hide(s.to_string())).collect::<Vec<_>>());
-
-    let cipher_seed = CipherSeed::from_mnemonic(&seed_words, None).unwrap();
-    let key_manager = CoreKeyManagerHandle::new(
-        cipher_seed.clone(),
-        KeyManagerDatabase::new(ks_backend),
-        factories.clone(),
-    )
-    .unwrap();
+    let key_manager = create_test_core_key_manager_with_memory_db();
 
     let output_manager_service = OutputManagerService::new(
         OutputManagerServiceConfig { ..Default::default() },
@@ -224,7 +211,7 @@ async fn setup_output_manager_service<T: OutputManagerBackend + 'static, U: KeyM
         node_id: server_node_identity,
         base_node_wallet_rpc_mock_state: rpc_service_state,
         node_event: event_publisher_bns,
-        key_manager_handler: key_manager,
+        key_manager_handle: key_manager,
         recovery_data,
     }
 }
@@ -289,13 +276,23 @@ pub async fn setup_oms_with_bn_state<T: OutputManagerBackend + 'static>(
     )
 }
 
-async fn generate_sender_transaction_message(amount: MicroTari) -> (TxId, TransactionSenderMessage) {
+async fn generate_sender_transaction_message(
+    amount: MicroTari,
+    key_manager: &TestKeyManager,
+) -> (TxId, TransactionSenderMessage) {
     let factories = CryptoFactories::default();
 
     let alice = TestParams::new(&mut OsRng);
-
-    let (utxo, input) = make_non_recoverable_input(&mut OsRng, 2 * amount, &factories.commitment).await;
-    let mut builder = SenderTransactionProtocol::builder(1, create_consensus_constants(0));
+    let key_manager = create_test_core_key_manager_with_memory_db();
+    let (utxo, input) = make_non_recoverable_input(
+        &mut OsRng,
+        2 * amount,
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &key_manager,
+    )
+    .await;
+    let mut builder = SenderTransactionProtocol::builder(create_consensus_constants(0), key_manager);
     let script_private_key = PrivateKey::random(&mut OsRng);
     builder
         .with_lock_height(0)
@@ -338,12 +335,18 @@ async fn fee_estimate() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
 
     let factories = CryptoFactories::default();
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
-    let (_, uo) = make_non_recoverable_input(&mut OsRng.clone(), MicroTari::from(3000), &factories.commitment).await;
+    let (_, uo) = make_non_recoverable_input(
+        &mut OsRng.clone(),
+        MicroTari::from(3000),
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
     oms.output_manager_handle.add_output(uo, None).await.unwrap();
     let fee_calc = Fee::new(*create_consensus_constants(0).transaction_weight());
     // minimum fpg
@@ -447,15 +450,17 @@ async fn test_utxo_selection_no_chain_metadata() {
     assert!(matches!(err, OutputManagerError::NotEnoughFunds));
 
     // create 10 utxos with maturity at heights from 1 to 10
+    let key_manager = create_test_core_key_manager_with_memory_db();
     for i in 1..=10 {
         let (_, uo) = make_input_with_features(
             &mut OsRng.clone(),
             i * amount,
             &factories.commitment,
-            Some(OutputFeatures {
+            OutputFeatures {
                 maturity: i,
                 ..Default::default()
-            }),
+            },
+            &key_manager,
         )
         .await;
         oms.add_output(uo.clone(), None).await.unwrap();
@@ -484,8 +489,8 @@ async fn test_utxo_selection_no_chain_metadata() {
     assert_eq!(utxos.len(), 8);
     for (index, utxo) in utxos.iter().enumerate() {
         let i = index as u64 + 3;
-        assert_eq!(utxo.unblinded_output.features.maturity, i);
-        assert_eq!(utxo.unblinded_output.value, i * amount);
+        assert_eq!(utxo.key_manager_output.features.maturity, i);
+        assert_eq!(utxo.key_manager_output.value, i * amount);
     }
 
     // test that we can get a fee estimate with no chain metadata
@@ -521,8 +526,8 @@ async fn test_utxo_selection_no_chain_metadata() {
     assert_eq!(utxos.len(), 7);
     for (index, utxo) in utxos.iter().enumerate() {
         let i = index as u64 + 3;
-        assert_eq!(utxo.unblinded_output.features.maturity, i);
-        assert_eq!(utxo.unblinded_output.value, i * amount);
+        assert_eq!(utxo.key_manager_output.features.maturity, i);
+        assert_eq!(utxo.key_manager_output.value, i * amount);
     }
 }
 
@@ -569,15 +574,17 @@ async fn test_utxo_selection_with_chain_metadata() {
     assert!(matches!(err, OutputManagerError::NotEnoughFunds));
 
     // create 10 utxos with maturity at heights from 1 to 10
+    let key_manager = create_test_core_key_manager_with_memory_db();
     for i in 1..=10 {
         let (_, uo) = make_input_with_features(
             &mut OsRng.clone(),
             i * amount,
             &factories.commitment,
-            Some(OutputFeatures {
+            OutputFeatures {
                 maturity: i,
                 ..Default::default()
-            }),
+            },
+            &key_manager,
         )
         .await;
         oms.add_output(uo.clone(), None).await.unwrap();
@@ -610,7 +617,7 @@ async fn test_utxo_selection_with_chain_metadata() {
     // test that largest spendable utxo was encumbered
     let utxos = oms.get_unspent_outputs().await.unwrap();
     assert_eq!(utxos.len(), 9);
-    let found = utxos.iter().any(|u| u.unblinded_output.value == 6 * amount);
+    let found = utxos.iter().any(|u| u.key_manager_output.value == 6 * amount);
     assert!(!found, "An unspendable utxo was selected");
 
     // test transactions
@@ -635,10 +642,10 @@ async fn test_utxo_selection_with_chain_metadata() {
     let utxos = oms.get_unspent_outputs().await.unwrap();
     assert_eq!(utxos.len(), 7);
     for utxo in &utxos {
-        assert_ne!(utxo.unblinded_output.features.maturity, 1);
-        assert_ne!(utxo.unblinded_output.value, amount);
-        assert_ne!(utxo.unblinded_output.features.maturity, 2);
-        assert_ne!(utxo.unblinded_output.value, 2 * amount);
+        assert_ne!(utxo.key_manager_output.features.maturity, 1);
+        assert_ne!(utxo.key_manager_output.value, amount);
+        assert_ne!(utxo.key_manager_output.features.maturity, 2);
+        assert_ne!(utxo.key_manager_output.value, 2 * amount);
     }
 
     // when the amount is greater than the largest utxo, then "Largest" selection strategy is used
@@ -663,10 +670,10 @@ async fn test_utxo_selection_with_chain_metadata() {
     let utxos = oms.get_unspent_outputs().await.unwrap();
     assert_eq!(utxos.len(), 5);
     for utxo in &utxos {
-        assert_ne!(utxo.unblinded_output.features.maturity, 4);
-        assert_ne!(utxo.unblinded_output.value, 4 * amount);
-        assert_ne!(utxo.unblinded_output.features.maturity, 5);
-        assert_ne!(utxo.unblinded_output.value, 5 * amount);
+        assert_ne!(utxo.key_manager_output.features.maturity, 4);
+        assert_ne!(utxo.key_manager_output.value, 4 * amount);
+        assert_ne!(utxo.key_manager_output.features.maturity, 5);
+        assert_ne!(utxo.key_manager_output.value, 5 * amount);
     }
 }
 
@@ -694,11 +701,13 @@ async fn test_utxo_selection_with_tx_priority() {
     let fee_per_gram = MicroTari::from(2);
 
     // we create two outputs, one as coinbase-high priority one as normal so we can track them
+    let key_manager = create_test_core_key_manager_with_memory_db();
     let (_, uo) = make_input_with_features(
         &mut OsRng.clone(),
         amount,
         &factories.commitment,
-        Some(OutputFeatures::create_coinbase(1, None)),
+        OutputFeatures::create_coinbase(1, None),
+        &key_manager,
     )
     .await;
     oms.add_output(uo, Some(SpendingPriority::HtlcSpendAsap)).await.unwrap();
@@ -706,10 +715,11 @@ async fn test_utxo_selection_with_tx_priority() {
         &mut OsRng.clone(),
         amount,
         &factories.commitment,
-        Some(OutputFeatures {
+        OutputFeatures {
             maturity: 1,
             ..Default::default()
-        }),
+        },
+        &key_manager,
     )
     .await;
     oms.add_output(uo, None).await.unwrap();
@@ -739,7 +749,7 @@ async fn test_utxo_selection_with_tx_priority() {
     let utxos = oms.get_unspent_outputs().await.unwrap();
     assert_eq!(utxos.len(), 1);
 
-    assert_ne!(utxos[0].unblinded_output.features.output_type, OutputType::Coinbase);
+    assert_ne!(utxos[0].key_manager_output.features.output_type, OutputType::Coinbase);
 }
 
 #[tokio::test]
@@ -753,15 +763,16 @@ async fn send_not_enough_funds() {
 
     let (connection, _tempdir) = get_temp_sqlite_database_connection();
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
 
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
     let num_outputs = 20;
     for _i in 0..num_outputs {
         let (_ti, uo) = make_non_recoverable_input(
             &mut OsRng.clone(),
             MicroTari::from(200 + OsRng.next_u64() % 1000),
             &factories.commitment,
+            &OutputFeatures::default(),
+            &oms.key_manager_handle,
         )
         .await;
         oms.output_manager_handle.add_output(uo, None).await.unwrap();
@@ -798,9 +809,8 @@ async fn send_no_change() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
 
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
     let fee_per_gram = MicroTari::from(4);
     let constants = create_consensus_constants(0);
@@ -878,9 +888,8 @@ async fn send_not_enough_for_change() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
 
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
     let fee_per_gram = MicroTari::from(4);
     let constants = create_consensus_constants(0);
@@ -947,9 +956,8 @@ async fn cancel_transaction() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
 
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
     let num_outputs = 20;
     for _i in 0..num_outputs {
@@ -957,6 +965,8 @@ async fn cancel_transaction() {
             &mut OsRng.clone(),
             MicroTari::from(100 + OsRng.next_u64() % 1000),
             &factories.commitment,
+            &OutputFeatures::default(),
+            &oms.key_manager_handle,
         )
         .await;
         oms.output_manager_handle.add_output(uo, None).await.unwrap();
@@ -1004,12 +1014,11 @@ async fn cancel_transaction_and_reinstate_inbound_tx() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
 
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
     let value = MicroTari::from(5000);
-    let (tx_id, sender_message) = generate_sender_transaction_message(value).await;
+    let (tx_id, sender_message) = generate_sender_transaction_message(value, &oms.key_manager_handle).await;
     let _rtp = oms
         .output_manager_handle
         .get_recipient_transaction(sender_message)
@@ -1047,9 +1056,8 @@ async fn test_get_balance() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
 
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
     let balance = oms.output_manager_handle.get_balance().await.unwrap();
 
@@ -1057,11 +1065,25 @@ async fn test_get_balance() {
 
     let mut total = MicroTari::from(0);
     let output_val = MicroTari::from(2000);
-    let (_ti, uo) = make_non_recoverable_input(&mut OsRng.clone(), output_val, &factories.commitment).await;
+    let (_ti, uo) = make_non_recoverable_input(
+        &mut OsRng.clone(),
+        output_val,
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
     total += uo.value;
     oms.output_manager_handle.add_output(uo, None).await.unwrap();
 
-    let (_ti, uo) = make_non_recoverable_input(&mut OsRng.clone(), output_val, &factories.commitment).await;
+    let (_ti, uo) = make_non_recoverable_input(
+        &mut OsRng.clone(),
+        output_val,
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
     total += uo.value;
     oms.output_manager_handle.add_output(uo, None).await.unwrap();
 
@@ -1086,7 +1108,7 @@ async fn test_get_balance() {
     let change_val = stp.get_change_amount().unwrap();
 
     let recv_value = MicroTari::from(1500);
-    let (_tx_id, sender_message) = generate_sender_transaction_message(recv_value).await;
+    let (_tx_id, sender_message) = generate_sender_transaction_message(recv_value, &oms.key_manager_handle).await;
     let _rtp = oms
         .output_manager_handle
         .get_recipient_transaction(sender_message)
@@ -1113,14 +1135,27 @@ async fn sending_transaction_persisted_while_offline() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
 
-    let mut oms = setup_output_manager_service(backend.clone(), ks_backend.clone(), true).await;
+    let mut oms = setup_output_manager_service(backend.clone(), true).await;
 
     let available_balance = 20_000 * uT;
-    let (_ti, uo) = make_non_recoverable_input(&mut OsRng.clone(), available_balance / 2, &factories.commitment).await;
+    let (_ti, uo) = make_non_recoverable_input(
+        &mut OsRng.clone(),
+        available_balance / 2,
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
     oms.output_manager_handle.add_output(uo, None).await.unwrap();
-    let (_ti, uo) = make_non_recoverable_input(&mut OsRng.clone(), available_balance / 2, &factories.commitment).await;
+    let (_ti, uo) = make_non_recoverable_input(
+        &mut OsRng.clone(),
+        available_balance / 2,
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
     oms.output_manager_handle.add_output(uo, None).await.unwrap();
 
     let balance = oms.output_manager_handle.get_balance().await.unwrap();
@@ -1154,7 +1189,7 @@ async fn sending_transaction_persisted_while_offline() {
     // This simulates an offline wallet with a  queued transaction that has not been sent to the receiving wallet
     // yet
     drop(oms.output_manager_handle);
-    let mut oms = setup_output_manager_service(backend.clone(), ks_backend.clone(), true).await;
+    let mut oms = setup_output_manager_service(backend.clone(), true).await;
 
     let balance = oms.output_manager_handle.get_balance().await.unwrap();
     assert_eq!(balance.available_balance, available_balance / 2);
@@ -1185,7 +1220,7 @@ async fn sending_transaction_persisted_while_offline() {
         .unwrap();
 
     drop(oms.output_manager_handle);
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
     let balance = oms.output_manager_handle.get_balance().await.unwrap();
     assert_eq!(balance.available_balance, MicroTari::from(0));
@@ -1204,15 +1239,35 @@ async fn coin_split_with_change() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
     let val1 = 6_000 * uT;
     let val2 = 7_000 * uT;
     let val3 = 8_000 * uT;
-    let (_ti, uo1) = make_non_recoverable_input(&mut OsRng, val1, &factories.commitment).await;
-    let (_ti, uo2) = make_non_recoverable_input(&mut OsRng, val2, &factories.commitment).await;
-    let (_ti, uo3) = make_non_recoverable_input(&mut OsRng, val3, &factories.commitment).await;
+    let (_ti, uo1) = make_non_recoverable_input(
+        &mut OsRng,
+        val1,
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
+    let (_ti, uo2) = make_non_recoverable_input(
+        &mut OsRng,
+        val2,
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
+    let (_ti, uo3) = make_non_recoverable_input(
+        &mut OsRng,
+        val3,
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
     assert!(oms.output_manager_handle.add_output(uo1, None).await.is_ok());
     assert!(oms.output_manager_handle.add_output(uo2, None).await.is_ok());
     assert!(oms.output_manager_handle.add_output(uo3, None).await.is_ok());
@@ -1250,8 +1305,7 @@ async fn coin_split_no_change() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
     let fee_per_gram = MicroTari::from(4);
     let split_count = 15;
@@ -1268,9 +1322,30 @@ async fn coin_split_no_change() {
     let val1 = 4_000 * uT;
     let val2 = 5_000 * uT;
     let val3 = 6_000 * uT + expected_fee;
-    let (_ti, uo1) = make_non_recoverable_input(&mut OsRng, val1, &factories.commitment).await;
-    let (_ti, uo2) = make_non_recoverable_input(&mut OsRng, val2, &factories.commitment).await;
-    let (_ti, uo3) = make_non_recoverable_input(&mut OsRng, val3, &factories.commitment).await;
+    let (_ti, uo1) = make_non_recoverable_input(
+        &mut OsRng,
+        val1,
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
+    let (_ti, uo2) = make_non_recoverable_input(
+        &mut OsRng,
+        val2,
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
+    let (_ti, uo3) = make_non_recoverable_input(
+        &mut OsRng,
+        val3,
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
     assert!(oms.output_manager_handle.add_output(uo1, None).await.is_ok());
     assert!(oms.output_manager_handle.add_output(uo2, None).await.is_ok());
     assert!(oms.output_manager_handle.add_output(uo3, None).await.is_ok());
@@ -1296,8 +1371,7 @@ async fn handle_coinbase_with_bulletproofs_rewinding() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
     let reward1 = MicroTari::from(1000);
     let fees1 = MicroTari::from(500);
@@ -1376,10 +1450,9 @@ async fn test_txo_validation() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
     let oms_db = backend.clone();
 
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
     // Now we add the connection
     let mut connection = oms
@@ -1390,8 +1463,14 @@ async fn test_txo_validation() {
         .set_base_node_wallet_rpc_client(connect_rpc_client(&mut connection).await);
 
     let output1_value = 1_000_000;
-    let (_, output1) =
-        make_non_recoverable_input(&mut OsRng, MicroTari::from(output1_value), &factories.commitment).await;
+    let (_, output1) = make_non_recoverable_input(
+        &mut OsRng,
+        MicroTari::from(output1_value),
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
     let output1_tx_output = output1.as_transaction_output(&factories).unwrap();
 
     oms.output_manager_handle
@@ -1400,8 +1479,14 @@ async fn test_txo_validation() {
         .unwrap();
 
     let output2_value = 2_000_000;
-    let (_, output2) =
-        make_non_recoverable_input(&mut OsRng, MicroTari::from(output2_value), &factories.commitment).await;
+    let (_, output2) = make_non_recoverable_input(
+        &mut OsRng,
+        MicroTari::from(output2_value),
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
     let output2_tx_output = output2.as_transaction_output(&factories).unwrap();
 
     oms.output_manager_handle
@@ -1410,8 +1495,14 @@ async fn test_txo_validation() {
         .unwrap();
 
     let output3_value = 4_000_000;
-    let (_, output3) =
-        make_non_recoverable_input(&mut OsRng, MicroTari::from(output3_value), &factories.commitment).await;
+    let (_, output3) = make_non_recoverable_input(
+        &mut OsRng,
+        MicroTari::from(output3_value),
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
 
     oms.output_manager_handle
         .add_output_with_tx_id(TxId::from(3u64), output3.clone(), None)
@@ -1498,7 +1589,7 @@ async fn test_txo_validation() {
         .unwrap();
 
     let recv_value = MicroTari::from(8_000_000);
-    let (_recv_tx_id, sender_message) = generate_sender_transaction_message(recv_value).await;
+    let (_recv_tx_id, sender_message) = generate_sender_transaction_message(recv_value, &oms.key_manager_handle).await;
 
     let _receiver_transaction_protocal = oms
         .output_manager_handle
@@ -1522,19 +1613,19 @@ async fn test_txo_validation() {
 
     let o5_pos = outputs
         .iter()
-        .position(|o| o.unblinded_output.value == MicroTari::from(8_000_000))
+        .position(|o| o.key_manager_output.value == MicroTari::from(8_000_000))
         .unwrap();
     let output5 = outputs.remove(o5_pos);
     let o6_pos = outputs
         .iter()
-        .position(|o| o.unblinded_output.value == MicroTari::from(16_000_000))
+        .position(|o| o.key_manager_output.value == MicroTari::from(16_000_000))
         .unwrap();
     let output6 = outputs.remove(o6_pos);
     let output4 = outputs[0].clone();
 
-    let output4_tx_output = output4.unblinded_output.as_transaction_output(&factories).unwrap();
-    let output5_tx_output = output5.unblinded_output.as_transaction_output(&factories).unwrap();
-    let output6_tx_output = output6.unblinded_output.as_transaction_output(&factories).unwrap();
+    let output4_tx_output = output4.key_manager_output.as_transaction_output(&factories).unwrap();
+    let output5_tx_output = output5.key_manager_output.as_transaction_output(&factories).unwrap();
+    let output6_tx_output = output6.key_manager_output.as_transaction_output(&factories).unwrap();
 
     let balance = oms.output_manager_handle.get_balance().await.unwrap();
 
@@ -1919,9 +2010,8 @@ async fn test_txo_revalidation() {
 
     let (connection, _tempdir) = get_temp_sqlite_database_connection();
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
 
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
     // Now we add the connection
     let mut connection = oms
@@ -2093,19 +2183,30 @@ async fn test_get_status_by_tx_id() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
 
-    let mut oms = setup_output_manager_service(backend, ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend, true).await;
 
-    let (_ti, uo1) =
-        make_non_recoverable_input(&mut OsRng.clone(), MicroTari::from(10000), &factories.commitment).await;
+    let (_ti, uo1) = make_non_recoverable_input(
+        &mut OsRng.clone(),
+        MicroTari::from(10000),
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
     oms.output_manager_handle
         .add_unvalidated_output(TxId::from(1u64), uo1, None)
         .await
         .unwrap();
 
-    let (_ti, uo2) =
-        make_non_recoverable_input(&mut OsRng.clone(), MicroTari::from(10000), &factories.commitment).await;
+    let (_ti, uo2) = make_non_recoverable_input(
+        &mut OsRng.clone(),
+        MicroTari::from(10000),
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
     oms.output_manager_handle
         .add_unvalidated_output(TxId::from(2u64), uo2, None)
         .await
@@ -2136,22 +2237,21 @@ async fn scan_for_recovery_test() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
-    let mut oms = setup_output_manager_service(backend.clone(), ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend.clone(), true).await;
 
     const NUM_RECOVERABLE: usize = 5;
     const NUM_NON_RECOVERABLE: usize = 3;
 
-    let mut recoverable_unblinded_outputs = Vec::new();
+    let mut recoverable_key_manager_outputs = Vec::new();
 
     for i in 1..=NUM_RECOVERABLE {
         let spending_key_result = oms
-            .key_manager_handler
+            .key_manager_handle
             .get_next_key(OutputManagerKeyManagerBranch::Spend.get_branch_key())
             .await
             .unwrap();
         let script_key = oms
-            .key_manager_handler
+            .key_manager_handle
             .get_key_at_index(
                 OutputManagerKeyManagerBranch::SpendScript.get_branch_key(),
                 spending_key_result.index,
@@ -2163,14 +2263,14 @@ async fn scan_for_recovery_test() {
         let features = OutputFeatures::default();
 
         let encryption_key = oms
-            .key_manager_handler
+            .key_manager_handle
             .get_key_at_index(OutputManagerKeyManagerBranch::OpeningsEncryption.get_branch_key(), 0)
             .await
             .unwrap();
         let encrypted_data =
             EncryptedData::encrypt_data(&encryption_key, &commitment, amount.into(), &spending_key_result.key).unwrap();
 
-        let uo = UnblindedOutput::new_current_version(
+        let uo = KeyManagerOutput::new_current_version(
             MicroTari::from(amount),
             spending_key_result.key,
             features,
@@ -2184,31 +2284,37 @@ async fn scan_for_recovery_test() {
             encrypted_data,
             MicroTari::zero(),
         );
-        recoverable_unblinded_outputs.push(uo);
+        recoverable_key_manager_outputs.push(uo);
     }
 
-    let mut non_recoverable_unblinded_outputs = Vec::new();
+    let mut non_recoverable_key_manager_outputs = Vec::new();
 
     for i in 1..=NUM_NON_RECOVERABLE {
-        let (_ti, uo) =
-            make_non_recoverable_input(&mut OsRng, MicroTari::from(1000 * i as u64), &factories.commitment).await;
-        non_recoverable_unblinded_outputs.push(uo)
+        let (_ti, uo) = make_non_recoverable_input(
+            &mut OsRng,
+            MicroTari::from(1000 * i as u64),
+            &factories.commitment,
+            &OutputFeatures::default(),
+            &oms.key_manager_handle,
+        )
+        .await;
+        non_recoverable_key_manager_outputs.push(uo)
     }
 
-    let recoverable_outputs: Vec<TransactionOutput> = recoverable_unblinded_outputs
+    let recoverable_outputs: Vec<TransactionOutput> = recoverable_key_manager_outputs
         .clone()
         .into_iter()
         .map(|uo| uo.as_transaction_output(&factories).unwrap())
         .collect();
 
-    let non_recoverable_outputs: Vec<TransactionOutput> = non_recoverable_unblinded_outputs
+    let non_recoverable_outputs: Vec<TransactionOutput> = non_recoverable_key_manager_outputs
         .clone()
         .into_iter()
         .map(|uo| uo.as_transaction_output(&factories).unwrap())
         .collect();
 
     oms.output_manager_handle
-        .add_output(recoverable_unblinded_outputs[0].clone(), None)
+        .add_output(recoverable_key_manager_outputs[0].clone(), None)
         .await
         .unwrap();
 
@@ -2228,7 +2334,7 @@ async fn scan_for_recovery_test() {
     // contained in the OMS database is also not included in the returns outputs.
 
     assert_eq!(recovered_outputs.len(), NUM_RECOVERABLE - 1);
-    for o in recoverable_unblinded_outputs.iter().skip(1) {
+    for o in recoverable_key_manager_outputs.iter().skip(1) {
         assert!(recovered_outputs
             .iter()
             .any(|ro| ro.output.spending_key == o.spending_key));
@@ -2246,10 +2352,16 @@ async fn recovered_output_key_not_in_keychain() {
     let cipher = XChaCha20Poly1305::new(key_ga);
 
     let backend = OutputManagerSqliteDatabase::new(connection.clone(), cipher.clone());
-    let ks_backend = KeyManagerSqliteDatabase::init(connection, cipher);
-    let mut oms = setup_output_manager_service(backend.clone(), ks_backend, true).await;
+    let mut oms = setup_output_manager_service(backend.clone(), true).await;
 
-    let (_ti, uo) = make_non_recoverable_input(&mut OsRng, MicroTari::from(1000u64), &factories.commitment).await;
+    let (_ti, uo) = make_non_recoverable_input(
+        &mut OsRng,
+        MicroTari::from(1000u64),
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &oms.key_manager_handle,
+    )
+    .await;
 
     let rewindable_output = uo.as_transaction_output(&factories).unwrap();
 

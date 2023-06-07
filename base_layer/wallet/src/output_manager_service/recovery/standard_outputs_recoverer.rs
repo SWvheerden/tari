@@ -26,11 +26,11 @@ use log::*;
 use rand::rngs::OsRng;
 use tari_common_types::{
     transaction::TxId,
-    types::{PrivateKey, PrivateKey, PublicKey},
+    types::{PrivateKey, PublicKey},
 };
 use tari_core::transactions::{
     tari_amount::MicroTari,
-    transaction_components::{EncryptedData, TransactionOutput, UnblindedOutput},
+    transaction_components::{EncryptedData, KeyManagerOutput, TransactionOutput},
     transaction_protocol::RecoveryData,
     CryptoFactories,
 };
@@ -47,7 +47,7 @@ use crate::output_manager_service::{
     resources::OutputManagerKeyManagerBranch,
     storage::{
         database::{OutputManagerBackend, OutputManagerDatabase},
-        models::DbUnblindedOutput,
+        models::DbKeyManagerOutput,
         OutputSource,
     },
 };
@@ -80,7 +80,7 @@ where
         }
     }
 
-    /// Attempt to rewind all of the given transaction outputs into unblinded outputs. If they can be rewound then add
+    /// Attempt to rewind all of the given transaction outputs into key_manager outputs. If they can be rewound then add
     /// them to the database and increment the key manager index
     pub async fn scan_and_recover_outputs(
         &mut self,
@@ -91,7 +91,7 @@ where
 
         let known_scripts = self.db.get_all_known_one_sided_payment_scripts()?;
 
-        let mut rewound_outputs: Vec<UnblindedOutput> = Vec::new();
+        let mut rewound_outputs: Vec<KeyManagerOutput> = Vec::new();
         for output in outputs {
             let known_script_index = known_scripts.iter().position(|s| s.script == output.script);
             if output.script != script!(Nop) && known_script_index.is_none() {
@@ -112,7 +112,7 @@ where
                 let key = PrivateKey::random(&mut OsRng);
                 (inputs!(PublicKey::from_secret_key(&key)), key)
             };
-            let uo = UnblindedOutput::new(
+            let uo = KeyManagerOutput::new(
                 output.version,
                 committed_value,
                 blinding_factor,
@@ -149,7 +149,7 @@ where
                 _ => OutputSource::RecoveredButUnrecognized,
             };
 
-            let db_output = DbUnblindedOutput::from_unblinded_output(
+            let db_output = DbKeyManagerOutput::from_key_manager_output(
                 output.clone(),
                 &self.factories,
                 None,
@@ -211,7 +211,7 @@ where
     /// seen so far.
     async fn update_outputs_script_private_key_and_update_key_manager_index(
         &mut self,
-        output: &mut UnblindedOutput,
+        output: &mut KeyManagerOutput,
     ) -> Result<(), OutputManagerError> {
         let script_key = if output.features.is_coinbase() {
             let found_index = self

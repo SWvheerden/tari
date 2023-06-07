@@ -38,6 +38,7 @@ use futures::{
 };
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
+use tari_common_sqlite::connection::{DbConnection, DbConnectionUrl};
 use tari_common_types::{
     chain_metadata::ChainMetadata,
     tari_address::TariAddress,
@@ -77,7 +78,7 @@ use tari_core::{
         },
         types::Signature as SignatureProto,
     },
-    test_helpers::create_test_core_key_manager_with_memory_db,
+    test_helpers::{create_test_core_key_manager_with_memory_db, TestKeyManager},
     transactions::{
         fee::Fee,
         tari_amount::*,
@@ -103,7 +104,10 @@ use tari_crypto::{
 };
 use tari_key_manager::{
     cipher_seed::CipherSeed,
-    key_manager_service::{storage::sqlite_db::KeyManagerSqliteDatabase, KeyId},
+    key_manager_service::{
+        storage::{database::KeyManagerDatabase, sqlite_db::KeyManagerSqliteDatabase},
+        KeyId,
+    },
 };
 use tari_p2p::{comms_connector::pubsub_connector, domain_message::DomainMessage, Network};
 use tari_script::{inputs, one_sided_payment_script, script, ExecutionStack, TariScript};
@@ -137,7 +141,7 @@ use tari_wallet::{
         sqlite_db::wallet::WalletSqliteDatabase,
         sqlite_utilities::{run_migration_and_create_sqlite_connection, WalletDbConnection},
     },
-    test_utils::{create_consensus_constants, make_wallet_database_connection},
+    test_utils::{create_consensus_constants, make_wallet_database_connection, random_string},
     transaction_service::{
         config::TransactionServiceConfig,
         error::TransactionServiceError,
@@ -167,9 +171,6 @@ use crate::support::{
     utils::{make_non_recoverable_input, TestParams},
 };
 
-type ThisKeyManagerBackend = KeyManagerSqliteDatabase<WalletDbConnection>;
-type ThisCoreKeyManagerHandle = CoreKeyManagerHandle<ThisKeyManagerBackend>;
-
 async fn setup_transaction_service<P: AsRef<Path>>(
     node_identity: Arc<NodeIdentity>,
     peers: Vec<Arc<NodeIdentity>>,
@@ -184,7 +185,7 @@ async fn setup_transaction_service<P: AsRef<Path>>(
     OutputManagerHandle,
     CommsNode,
     WalletConnectivityHandle,
-    ThisCoreKeyManagerHandle,
+    TestKeyManager,
 ) {
     let (publisher, subscription_factory) = pubsub_connector(100, 20);
     let subscription_factory = Arc::new(subscription_factory);
@@ -211,16 +212,22 @@ async fn setup_transaction_service<P: AsRef<Path>>(
 
     let ts_backend = TransactionServiceSqliteDatabase::new(db_connection.clone(), cipher.clone());
     let oms_backend = OutputManagerSqliteDatabase::new(db_connection.clone(), cipher.clone());
-    let kms_backend = KeyManagerSqliteDatabase::init(db_connection, cipher);
     let wallet_identity = WalletIdentity::new(node_identity, Network::LocalNet);
 
+    let connection = DbConnection::connect_url(&DbConnectionUrl::MemoryShared(random_string(8))).unwrap();
     let cipher = CipherSeed::new();
+    let mut key = [0u8; size_of::<Key>()];
+    OsRng.fill_bytes(&mut key);
+    let key_ga = Key::from_slice(&key);
+    let db_cipher = XChaCha20Poly1305::new(key_ga);
+    let kms_backend = KeyManagerDatabase::new(KeyManagerSqliteDatabase::init(connection, db_cipher));
+
     let handles = StackBuilder::new(shutdown_signal)
         .add_initializer(RegisterHandle::new(dht))
         .add_initializer(RegisterHandle::new(comms.connectivity()))
         .add_initializer(OutputManagerServiceInitializer::<
             OutputManagerSqliteDatabase,
-            ThisCoreKeyManagerHandle,
+            TestKeyManager,
         >::new(
             OutputManagerServiceConfig::default(),
             oms_backend,
@@ -228,12 +235,12 @@ async fn setup_transaction_service<P: AsRef<Path>>(
             Network::LocalNet.into(),
             comms.node_identity(),
         ))
-        .add_initializer(CoreKeyManagerInitializer::<ThisKeyManagerBackend>::new(
+        .add_initializer(CoreKeyManagerInitializer::<_>::new(
             kms_backend,
             cipher,
             factories.clone(),
         ))
-        .add_initializer(TransactionServiceInitializer::<_, _, ThisCoreKeyManagerHandle>::new(
+        .add_initializer(TransactionServiceInitializer::<_, _, TestKeyManager>::new(
             TransactionServiceConfig {
                 broadcast_monitoring_timeout: Duration::from_secs(5),
                 chain_monitoring_timeout: Duration::from_secs(5),
@@ -255,7 +262,7 @@ async fn setup_transaction_service<P: AsRef<Path>>(
         .unwrap();
 
     let output_manager_handle = handles.expect_handle::<OutputManagerHandle>();
-    let key_manager_handle = handles.expect_handle::<ThisCoreKeyManagerHandle>();
+    let key_manager_handle = handles.expect_handle::<TestKeyManager>();
     let transaction_service_handle = handles.expect_handle::<TransactionServiceHandle>();
     let connectivity_service_handle = handles.expect_handle::<WalletConnectivityHandle>();
 
@@ -523,7 +530,7 @@ async fn manage_single_transaction() {
     let (bob_connection, _tempdir) = make_wallet_database_connection(Some(database_path.clone()));
 
     let shutdown = Shutdown::new();
-    let (mut alice_ts, mut alice_oms, _alice_comms, _alice_connectivity, _key_manager_handle) =
+    let (mut alice_ts, mut alice_oms, _alice_comms, _alice_connectivity, key_manager_handle) =
         setup_transaction_service(
             alice_node_identity.clone(),
             vec![],
@@ -540,7 +547,7 @@ async fn manage_single_transaction() {
 
     sleep(Duration::from_secs(2)).await;
 
-    let (mut bob_ts, mut bob_oms, bob_comms, _bob_connectivity, _key_manager_handle) = setup_transaction_service(
+    let (mut bob_ts, mut bob_oms, bob_comms, _bob_connectivity, key_manager_handle) = setup_transaction_service(
         bob_node_identity.clone(),
         vec![alice_node_identity.clone()],
         consensus_manager,
@@ -561,7 +568,14 @@ async fn manage_single_transaction() {
         .unwrap();
 
     let value = MicroTari::from(1000);
-    let (_utxo, uo1) = make_non_recoverable_input(&mut OsRng, MicroTari(2500), &factories.commitment).await;
+    let (_utxo, uo1) = make_non_recoverable_input(
+        &mut OsRng,
+        MicroTari(2500),
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &key_manager_handle,
+    )
+    .await;
     let bob_address = TariAddress::new(bob_node_identity.public_key().clone(), network);
     assert!(alice_ts
         .send_transaction(
@@ -1057,17 +1071,17 @@ async fn recover_one_sided_transaction() {
         .expect("Could not find completed one-sided tx");
     let outputs = completed_tx.transaction.body.outputs().clone();
 
-    let unblinded = bob_oms
+    let key_manager_output = bob_oms
         .scan_outputs_for_one_sided_payments(outputs.clone())
         .await
         .unwrap();
     // Bob should be able to claim 1 output.
-    assert_eq!(1, unblinded.len());
-    assert_eq!(value, unblinded[0].output.value);
+    assert_eq!(1, key_manager_output.len());
+    assert_eq!(value, key_manager_output[0].output.value);
 
     // Should ignore already existing outputs
-    let unblinded = bob_oms.scan_outputs_for_one_sided_payments(outputs).await.unwrap();
-    assert!(unblinded.is_empty());
+    let key_manager_output = bob_oms.scan_outputs_for_one_sided_payments(outputs).await.unwrap();
+    assert!(key_manager_output.is_empty());
 }
 
 #[tokio::test]

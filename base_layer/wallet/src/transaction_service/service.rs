@@ -52,10 +52,10 @@ use tari_core::{
         transaction_components::{
             EncryptedData,
             KernelFeatures,
+            KeyManagerOutput,
             OutputFeatures,
             Transaction,
             TransactionOutput,
-            UnblindedOutput,
         },
         transaction_protocol::{
             proto::protocol as proto,
@@ -1169,7 +1169,7 @@ where
             .map_err(|e| TransactionServiceProtocolError::new(tx_id, e.into()))?;
         self.resources
             .output_manager_service
-            .add_output_with_tx_id(tx_id, unblinded_output, Some(SpendingPriority::HtlcSpendAsap))
+            .add_output_with_tx_id(tx_id, key_manager_output, Some(SpendingPriority::HtlcSpendAsap))
             .await?;
         self.submit_transaction(
             transaction_broadcast_join_handles,
@@ -1427,15 +1427,10 @@ where
             .await
             .map_err(|e| TransactionServiceProtocolError::new(tx_id, e.into()))?;
         let sender_message = TransactionSenderMessage::new_single_round_message(stp.get_single_round_message(&self.resources.core_key_manager_service)?);
-        let (spend_key_id, _script_key_id) = self
+        let (spend_key_id, public_spend_key, _script_key_id, _) = self
             .resources
             .core_key_manager_service
             .get_next_spend_and_script_key_ids()
-            .await?;
-        let public_spend_key = self
-            .resources
-            .core_key_manager_service
-            .get_public_key_at_key_id(&spend_key_id)
             .await?;
         // TODO: Remove this when `core_key_manager_service` fully implemented
         let spend_key = self

@@ -918,13 +918,7 @@ mod test {
             is_synced: true,
         });
 
-        let tx = Transaction::new(
-            vec![],
-            vec![],
-            vec![],
-            PrivateKey::default(),
-            PrivateKey::default(),
-        );
+        let tx = Transaction::new(vec![], vec![], vec![], PrivateKey::default(), PrivateKey::default());
 
         let resp =
             TxSubmissionResponse::try_from(client.submit_transaction(tx.try_into().unwrap()).await.unwrap()).unwrap();

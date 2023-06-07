@@ -40,7 +40,7 @@ pub(crate) struct OutputManagerResources<TBackend, TWalletConnectivity, TKeyMana
     pub db: OutputManagerDatabase<TBackend>,
     pub factories: CryptoFactories,
     pub event_publisher: OutputManagerEventSender,
-    pub master_key_manager: TKeyManagerInterface,
+    pub key_manager: TKeyManagerInterface,
     pub consensus_constants: ConsensusConstants,
     pub connectivity: TWalletConnectivity,
     pub shutdown_signal: ShutdownSignal,

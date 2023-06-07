@@ -20,7 +20,10 @@
 //  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 //  USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use std::convert::{TryFrom, TryInto};
+use std::{
+    convert::{TryFrom, TryInto},
+    str::FromStr,
+};
 
 use borsh::BorshDeserialize;
 use chacha20poly1305::XChaCha20Poly1305;
@@ -34,12 +37,16 @@ use tari_common_types::{
     transaction::TxId,
     types::{ComAndPubSignature, Commitment, FixedHash, PrivateKey, PublicKey},
 };
-use tari_core::transactions::{
-    tari_amount::MicroTari,
-    transaction_components::{EncryptedData, OutputFeatures, OutputType, UnblindedOutput},
-    CryptoFactories,
+use tari_core::{
+    core_key_manager::BaseLayerKeyManagerInterface,
+    transactions::{
+        tari_amount::MicroTari,
+        transaction_components::{EncryptedData, KeyManagerOutput, OutputFeatures, OutputType},
+        CryptoFactories,
+    },
 };
 use tari_crypto::{commitment::HomomorphicCommitmentFactory, tari_utilities::ByteArray};
+use tari_key_manager::key_manager_service::KeyId;
 use tari_script::{ExecutionStack, TariScript};
 use tari_utilities::Hidden;
 use zeroize::Zeroize;
@@ -51,7 +58,7 @@ use crate::{
         service::Balance,
         storage::{
             database::{OutputBackendQuery, SortDirection},
-            models::DbUnblindedOutput,
+            models::DbKeyManagerOutput,
             sqlite_db::{UpdateOutput, UpdateOutputSql},
             OutputSource,
             OutputStatus,
@@ -65,13 +72,11 @@ use crate::{
 const LOG_TARGET: &str = "wallet::output_manager_service::database::wallet";
 
 #[derive(Clone, Derivative, Queryable, Identifiable, PartialEq, QueryableByName)]
-#[derivative(Debug)]
 #[diesel(table_name = outputs)]
 pub struct OutputSql {
     pub id: i32, // Auto inc primary key
     pub commitment: Option<Vec<u8>>,
-    #[derivative(Debug = "ignore")]
-    pub spending_key: Vec<u8>,
+    pub spending_key: String,
     pub value: i64,
     pub output_type: i32,
     pub maturity: i64,
@@ -79,8 +84,7 @@ pub struct OutputSql {
     pub hash: Option<Vec<u8>>,
     pub script: Vec<u8>,
     pub input_data: Vec<u8>,
-    #[derivative(Debug = "ignore")]
-    pub script_private_key: Vec<u8>,
+    pub script_private_key: String,
     pub script_lock_height: i64,
     pub sender_offset_public_key: Vec<u8>,
     pub metadata_signature_ephemeral_commitment: Vec<u8>,
@@ -369,9 +373,9 @@ impl OutputSql {
     }
 
     /// Find a particular Output, if it exists
-    pub fn find(spending_key: &[u8], conn: &mut SqliteConnection) -> Result<OutputSql, OutputManagerStorageError> {
+    pub fn find(spending_key: &str, conn: &mut SqliteConnection) -> Result<OutputSql, OutputManagerStorageError> {
         Ok(outputs::table
-            .filter(outputs::spending_key.eq(spending_key))
+            .filter(outputs::spending_key.eq(spending_key.to_string()))
             .first::<OutputSql>(conn)?)
     }
 
@@ -580,13 +584,13 @@ impl OutputSql {
 
     /// Find a particular Output, if it exists and is in the specified Spent state
     pub fn find_status(
-        spending_key: &[u8],
+        spending_key: &str,
         status: OutputStatus,
         conn: &mut SqliteConnection,
     ) -> Result<OutputSql, OutputManagerStorageError> {
         Ok(outputs::table
             .filter(outputs::status.eq(status as i32))
-            .filter(outputs::spending_key.eq(spending_key))
+            .filter(outputs::spending_key.eq(spending_key.to_string()))
             .first::<OutputSql>(conn)?)
     }
 
@@ -638,10 +642,11 @@ impl OutputSql {
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn to_db_unblinded_output(
+    pub async fn to_db_key_manager_output<KM: BaseLayerKeyManagerInterface>(
         self,
         cipher: &XChaCha20Poly1305,
-    ) -> Result<DbUnblindedOutput, OutputManagerStorageError> {
+        key_manager: &KM,
+    ) -> Result<DbKeyManagerOutput, OutputManagerStorageError> {
         let mut o = self.decrypt(cipher).map_err(OutputManagerStorageError::AeadError)?;
 
         let features: OutputFeatures =
@@ -660,27 +665,27 @@ impl OutputSql {
         })?;
 
         let encrypted_data = EncryptedData::from_bytes(&o.encrypted_data)?;
-        let unblinded_output = UnblindedOutput::new_current_version(
+        let key_manager_output = KeyManagerOutput::new_current_version(
             MicroTari::from(o.value as u64),
-            PrivateKey::from_vec(&o.spending_key).map_err(|_| {
+            KeyId::from_str(&o.spending_key).map_err(|e| {
                 error!(
                     target: LOG_TARGET,
-                    "Could not create PrivateKey from stored bytes, They might be encrypted"
+                    "Could not create spending key id from stored string ({})", e
                 );
                 OutputManagerStorageError::ConversionError {
-                    reason: "PrivateKey could not be converted from bytes".to_string(),
+                    reason: format!("Spending key id could not be converted from string ({})", e),
                 }
             })?,
             features,
             TariScript::from_bytes(o.script.as_slice())?,
             ExecutionStack::from_bytes(o.input_data.as_slice())?,
-            PrivateKey::from_vec(&o.script_private_key).map_err(|_| {
+            KeyId::from_str(&o.script_private_key).map_err(|e| {
                 error!(
                     target: LOG_TARGET,
-                    "Could not create PrivateKey from stored bytes, They might be encrypted"
+                    "Could not create script private key id from stored string ({})", e
                 );
                 OutputManagerStorageError::ConversionError {
-                    reason: "PrivateKey could not be converted from bytes".to_string(),
+                    reason: format!("Script private key id could not be converted from string ({})", e),
                 }
             })?,
             PublicKey::from_vec(&o.sender_offset_public_key).map_err(|_| {
@@ -745,19 +750,17 @@ impl OutputSql {
             MicroTari::from(o.minimum_value_promise as u64),
         );
 
-        // we manually zeroize the sensitive data associated with OuptputSql, to avoid any leaks
-        o.spending_key.zeroize();
-        o.script_private_key.zeroize();
-
         let factories = CryptoFactories::default();
         let commitment = match o.commitment {
-            None => factories
-                .commitment
-                .commit(&unblinded_output.spending_key, &unblinded_output.value.into()),
+            None => {
+                key_manager
+                    .get_commitment(&key_manager_output.spending_key_id, &key_manager_output.value.into())
+                    .await?
+            },
             Some(c) => Commitment::from_vec(&c)?,
         };
         let hash = match o.hash {
-            None => unblinded_output.hash(&factories),
+            None => key_manager_output.hash(&factories).await,
             Some(v) => match <Vec<u8> as TryInto<FixedHash>>::try_into(v) {
                 Ok(v) => v,
                 Err(e) => {
@@ -783,9 +786,9 @@ impl OutputSql {
             },
             None => None,
         };
-        Ok(DbUnblindedOutput {
+        Ok(DbKeyManagerOutput {
             commitment,
-            unblinded_output,
+            key_manager_output,
             hash,
             status: o.status.try_into()?,
             mined_height: o.mined_height.map(|mh| mh as u64),
@@ -799,39 +802,5 @@ impl OutputSql {
             received_in_tx_id: o.received_in_tx_id.map(|d| (d as u64).into()),
             spent_in_tx_id: o.spent_in_tx_id.map(|d| (d as u64).into()),
         })
-    }
-}
-
-impl Encryptable<XChaCha20Poly1305> for OutputSql {
-    fn domain(&self, field_name: &'static str) -> Vec<u8> {
-        // WARNING: using `OUTPUT` for both NewOutputSql and OutputSql due to later transition without re-encryption
-        [Self::OUTPUT, self.script.as_slice(), field_name.as_bytes()]
-            .concat()
-            .to_vec()
-    }
-
-    fn encrypt(mut self, cipher: &XChaCha20Poly1305) -> Result<Self, String> {
-        self.spending_key = encrypt_bytes_integral_nonce(
-            cipher,
-            self.domain("spending_key"),
-            Hidden::hide(self.spending_key.clone()),
-        )?;
-
-        self.script_private_key = encrypt_bytes_integral_nonce(
-            cipher,
-            self.domain("script_private_key"),
-            Hidden::hide(self.script_private_key),
-        )?;
-
-        Ok(self)
-    }
-
-    fn decrypt(mut self, cipher: &XChaCha20Poly1305) -> Result<Self, String> {
-        self.spending_key = decrypt_bytes_integral_nonce(cipher, self.domain("spending_key"), &self.spending_key)?;
-
-        self.script_private_key =
-            decrypt_bytes_integral_nonce(cipher, self.domain("script_private_key"), &self.script_private_key)?;
-
-        Ok(self)
     }
 }

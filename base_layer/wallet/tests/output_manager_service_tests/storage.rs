@@ -25,13 +25,16 @@ use std::mem::size_of;
 use chacha20poly1305::{Key, KeyInit, XChaCha20Poly1305};
 use rand::{rngs::OsRng, RngCore};
 use tari_common_types::{transaction::TxId, types::FixedHash};
-use tari_core::transactions::{tari_amount::MicroTari, CryptoFactories};
+use tari_core::{
+    test_helpers::create_test_core_key_manager_with_memory_db,
+    transactions::{tari_amount::MicroTari, transaction_components::OutputFeatures, CryptoFactories},
+};
 use tari_wallet::output_manager_service::{
     error::OutputManagerStorageError,
     service::Balance,
     storage::{
         database::{OutputManagerBackend, OutputManagerDatabase},
-        models::DbUnblindedOutput,
+        models::DbKeyManagerOutput,
         sqlite_db::OutputManagerSqliteDatabase,
         OutputSource,
     },
@@ -41,7 +44,7 @@ use tokio::runtime::Runtime;
 use crate::support::{data::get_temp_sqlite_database_connection, utils::make_non_recoverable_input};
 
 #[allow(clippy::too_many_lines)]
-pub fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
+pub async fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
     let runtime = Runtime::new().unwrap();
 
     let db = OutputManagerDatabase::new(backend);
@@ -49,15 +52,22 @@ pub fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
 
     // Add some unspent outputs
     let mut unspent_outputs = Vec::new();
+    let key_manager = create_test_core_key_manager_with_memory_db();
     for i in 0..5 {
-        let (_ti, uo) = runtime.block_on(make_non_recoverable_input(
-            &mut OsRng,
-            MicroTari::from(100 + OsRng.next_u64() % 1000),
-            &factories.commitment,
-        ));
+        let (_ti, uo) = runtime.block_on(
+            make_non_recoverable_input(
+                &mut OsRng,
+                MicroTari::from(100 + OsRng.next_u64() % 1000),
+                &factories.commitment,
+                &OutputFeatures::default(),
+                &key_manager,
+            )
+            .await,
+        );
         let mut uo =
-            DbUnblindedOutput::from_unblinded_output(uo, &factories, None, OutputSource::Unknown, None, None).unwrap();
-        uo.unblinded_output.features.maturity = i;
+            DbKeyManagerOutput::from_key_manager_output(uo, &factories, None, OutputSource::Unknown, None, None)
+                .unwrap();
+        uo.key_manager_output.features.maturity = i;
         db.add_unspent_output(uo.clone()).unwrap();
         unspent_outputs.push(uo);
     }
@@ -67,13 +77,13 @@ pub fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
     assert_eq!(unspent_outputs[4], time_locked_outputs[0]);
     let time_locked_outputs = db.get_timelocked_outputs(4).unwrap();
     assert_eq!(time_locked_outputs.len(), 0);
-    let time_locked_balance = unspent_outputs[4].unblinded_output.value;
+    let time_locked_balance = unspent_outputs[4].key_manager_output.value;
 
     for i in 0..4usize {
         let balance = db.get_balance(Some(i as u64)).unwrap();
         let mut sum = MicroTari::from(0);
         for output in unspent_outputs.iter().take(5).skip(i + 1) {
-            sum += output.unblinded_output.value;
+            sum += output.key_manager_output.value;
         }
         assert_eq!(balance.time_locked_balance.unwrap(), sum);
     }
@@ -86,8 +96,8 @@ pub fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
     // Add some sent transactions with outputs to be spent and received
     struct PendingTransactionOutputs {
         tx_id: TxId,
-        outputs_to_be_spent: Vec<DbUnblindedOutput>,
-        outputs_to_be_received: Vec<DbUnblindedOutput>,
+        outputs_to_be_spent: Vec<DbKeyManagerOutput>,
+        outputs_to_be_received: Vec<DbKeyManagerOutput>,
     }
 
     let mut pending_txs = Vec::new();
@@ -98,24 +108,36 @@ pub fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
             outputs_to_be_received: vec![],
         };
         for _ in 0..4 {
-            let (_ti, uo) = runtime.block_on(make_non_recoverable_input(
-                &mut OsRng,
-                MicroTari::from(100 + OsRng.next_u64() % 1000),
-                &factories.commitment,
-            ));
-            let uo = DbUnblindedOutput::from_unblinded_output(uo, &factories, None, OutputSource::Unknown, None, None)
-                .unwrap();
+            let (_ti, uo) = runtime.block_on(
+                make_non_recoverable_input(
+                    &mut OsRng,
+                    MicroTari::from(100 + OsRng.next_u64() % 1000),
+                    &factories.commitment,
+                    &OutputFeatures::default(),
+                    &key_manager,
+                )
+                .await,
+            );
+            let uo =
+                DbKeyManagerOutput::from_key_manager_output(uo, &factories, None, OutputSource::Unknown, None, None)
+                    .unwrap();
             db.add_unspent_output(uo.clone()).unwrap();
             pending_tx.outputs_to_be_spent.push(uo);
         }
         for _ in 0..2 {
-            let (_ti, uo) = runtime.block_on(make_non_recoverable_input(
-                &mut OsRng,
-                MicroTari::from(100 + OsRng.next_u64() % 1000),
-                &factories.commitment,
-            ));
-            let uo = DbUnblindedOutput::from_unblinded_output(uo, &factories, None, OutputSource::Unknown, None, None)
-                .unwrap();
+            let (_ti, uo) = runtime.block_on(
+                make_non_recoverable_input(
+                    &mut OsRng,
+                    MicroTari::from(100 + OsRng.next_u64() % 1000),
+                    &factories.commitment,
+                    &OutputFeatures::default(),
+                    &key_manager,
+                )
+                .await,
+            );
+            let uo =
+                DbKeyManagerOutput::from_key_manager_output(uo, &factories, None, OutputSource::Unknown, None, None)
+                    .unwrap();
             pending_tx.outputs_to_be_received.push(uo);
         }
         db.encumber_outputs(
@@ -130,18 +152,18 @@ pub fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
     // Test balance calc
     let available_balance = unspent_outputs
         .iter()
-        .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value);
+        .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value);
     let mut pending_incoming_balance = MicroTari(0);
     let mut pending_outgoing_balance = MicroTari(0);
     for v in &pending_txs {
         pending_outgoing_balance += v
             .outputs_to_be_spent
             .iter()
-            .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value);
+            .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value);
         pending_incoming_balance += v
             .outputs_to_be_received
             .iter()
-            .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value);
+            .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value);
     }
 
     let balance = db.get_balance(None).unwrap();
@@ -206,31 +228,31 @@ pub fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
     // Balance with confirmed second pending tx
     let mut available_balance = unspent_outputs
         .iter()
-        .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value);
+        .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value);
     let mut pending_incoming_balance = MicroTari(0);
     let mut pending_outgoing_balance = MicroTari(0);
 
     pending_outgoing_balance += pending_txs[0]
         .outputs_to_be_spent
         .iter()
-        .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value);
+        .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value);
     pending_outgoing_balance += pending_txs[2]
         .outputs_to_be_spent
         .iter()
-        .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value);
+        .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value);
     pending_incoming_balance += pending_txs[0]
         .outputs_to_be_received
         .iter()
-        .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value);
+        .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value);
     pending_incoming_balance += pending_txs[2]
         .outputs_to_be_received
         .iter()
-        .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value);
+        .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value);
 
     available_balance += pending_txs[1]
         .outputs_to_be_received
         .iter()
-        .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value);
+        .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value);
 
     let balance = db.get_balance(None).unwrap();
     assert_eq!(
@@ -245,16 +267,21 @@ pub fn test_db_backend<T: OutputManagerBackend + 'static>(backend: T) {
     );
 
     // Add output to be received
-    let (_ti, uo) = runtime.block_on(make_non_recoverable_input(
-        &mut OsRng,
-        MicroTari::from(100 + OsRng.next_u64() % 1000),
-        &factories.commitment,
-    ));
+    let (_ti, uo) = runtime.block_on(
+        make_non_recoverable_input(
+            &mut OsRng,
+            MicroTari::from(100 + OsRng.next_u64() % 1000),
+            &factories.commitment,
+            &OutputFeatures::default(),
+            &key_manager,
+        )
+        .await,
+    );
     let output_to_be_received =
-        DbUnblindedOutput::from_unblinded_output(uo, &factories, None, OutputSource::Unknown, None, None).unwrap();
+        DbKeyManagerOutput::from_key_manager_output(uo, &factories, None, OutputSource::Unknown, None, None).unwrap();
     db.add_output_to_be_received(TxId::from(11u64), output_to_be_received.clone(), None)
         .unwrap();
-    pending_incoming_balance += output_to_be_received.unblinded_output.value;
+    pending_incoming_balance += output_to_be_received.key_manager_output.value;
 
     let balance = db.get_balance(None).unwrap();
     assert_eq!(
@@ -356,16 +383,20 @@ pub async fn test_short_term_encumberance() {
     let db = OutputManagerDatabase::new(backend);
 
     let mut unspent_outputs = Vec::new();
+    let key_manager = create_test_core_key_manager_with_memory_db();
     for i in 0..5 {
         let (_ti, uo) = make_non_recoverable_input(
             &mut OsRng,
             MicroTari::from(100 + OsRng.next_u64() % 1000),
             &factories.commitment,
+            &OutputFeatures::default(),
+            &key_manager,
         )
         .await;
         let mut uo =
-            DbUnblindedOutput::from_unblinded_output(uo, &factories, None, OutputSource::Unknown, None, None).unwrap();
-        uo.unblinded_output.features.maturity = i;
+            DbKeyManagerOutput::from_key_manager_output(uo, &factories, None, OutputSource::Unknown, None, None)
+                .unwrap();
+        uo.key_manager_output.features.maturity = i;
         db.add_unspent_output(uo.clone()).unwrap();
         unspent_outputs.push(uo);
     }
@@ -378,7 +409,7 @@ pub async fn test_short_term_encumberance() {
         balance.available_balance,
         unspent_outputs[3..5]
             .iter()
-            .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value)
+            .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value)
     );
 
     db.clear_short_term_encumberances().unwrap();
@@ -388,7 +419,7 @@ pub async fn test_short_term_encumberance() {
         balance.available_balance,
         unspent_outputs
             .iter()
-            .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value)
+            .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value)
     );
 
     db.encumber_outputs(2u64.into(), unspent_outputs[0..=2].to_vec(), vec![])
@@ -402,7 +433,7 @@ pub async fn test_short_term_encumberance() {
         balance.available_balance,
         unspent_outputs[3..5]
             .iter()
-            .fold(MicroTari::from(0), |acc, x| acc + x.unblinded_output.value)
+            .fold(MicroTari::from(0), |acc, x| acc + x.key_manager_output.value)
     );
 }
 
@@ -420,8 +451,17 @@ pub async fn test_no_duplicate_outputs() {
     let db = OutputManagerDatabase::new(backend);
 
     // create an output
-    let (_ti, uo) = make_non_recoverable_input(&mut OsRng, MicroTari::from(1000), &factories.commitment).await;
-    let uo = DbUnblindedOutput::from_unblinded_output(uo, &factories, None, OutputSource::Unknown, None, None).unwrap();
+    let key_manager = create_test_core_key_manager_with_memory_db();
+    let (_ti, uo) = make_non_recoverable_input(
+        &mut OsRng,
+        MicroTari::from(1000),
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &key_manager,
+    )
+    .await;
+    let uo =
+        DbKeyManagerOutput::from_key_manager_output(uo, &factories, None, OutputSource::Unknown, None, None).unwrap();
 
     // add it to the database
     let result = db.add_unspent_output(uo.clone());
@@ -460,8 +500,17 @@ pub async fn test_mark_as_unmined() {
     let db = OutputManagerDatabase::new(backend);
 
     // create an output
-    let (_ti, uo) = make_non_recoverable_input(&mut OsRng, MicroTari::from(1000), &factories.commitment).await;
-    let uo = DbUnblindedOutput::from_unblinded_output(uo, &factories, None, OutputSource::Unknown, None, None).unwrap();
+    let key_manager = create_test_core_key_manager_with_memory_db();
+    let (_ti, uo) = make_non_recoverable_input(
+        &mut OsRng,
+        MicroTari::from(1000),
+        &factories.commitment,
+        &OutputFeatures::default(),
+        &key_manager,
+    )
+    .await;
+    let uo =
+        DbKeyManagerOutput::from_key_manager_output(uo, &factories, None, OutputSource::Unknown, None, None).unwrap();
 
     // add it to the database
     db.add_unspent_output(uo.clone()).unwrap();

@@ -58,11 +58,10 @@ use crate::{
 pub const LOG_TARGET: &str = "c::tx::tx_protocol::tx_initializer";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(super) struct ChangeDetails {
-    change_secret_key_id: TariKeyId,
+    change_spending_key_id: TariKeyId,
     change_script: TariScript,
     change_input_data: ExecutionStack,
     change_script_key_id: TariKeyId,
-    change_sender_offset_key_id: TariKeyId,
     change_covenant: Covenant,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -215,16 +214,14 @@ where KM: BaseLayerKeyManagerInterface
         change_script: TariScript,
         change_input_data: ExecutionStack,
         change_script_key_id: TariKeyId,
-        change_secret_key_id: TariKeyId,
-        change_sender_offset_key_id: TariKeyId,
+        change_spending_key_id: TariKeyId,
         change_covenant: Covenant,
     ) -> &mut Self {
         let details = ChangeDetails {
-            change_secret_key_id,
+            change_spending_key_id,
             change_script,
             change_input_data,
             change_script_key_id,
-            change_sender_offset_key_id,
             change_covenant,
         };
         self.change = Some(details);
@@ -357,8 +354,10 @@ where KM: BaseLayerKeyManagerInterface
                         let change_data = self.change.as_ref().ok_or("Change data was not provided")?;
                         let change_script = change_data.change_script.clone();
                         let change_script_key_id = change_data.change_script_key_id.clone();
-                        let change_key_id = change_data.change_secret_key_id.clone();
-                        let sender_offset_key_id = change_data.change_sender_offset_key_id.clone();
+                        let change_key_id = change_data.change_spending_key_id.clone();
+                        let (sender_offset_key_id, sender_offset_public_key) = self
+                            .get_next_key_id(&CoreKeyManagerBranch::Nonce.get_branch_key())
+                            .await?;
                         let input_data = change_data.change_input_data.clone();
 
                         let covenant = self
@@ -377,11 +376,6 @@ where KM: BaseLayerKeyManagerInterface
                         let minimum_value_promise = MicroTari::zero();
 
                         let output_version = TransactionOutputVersion::get_current_version();
-                        let sender_offset_public_key = self
-                            .key_manager
-                            .get_public_key_at_key_id(&sender_offset_key_id)
-                            .await
-                            .map_err(|e| e.to_string())?;
 
                         let features = OutputFeatures::default();
                         let metadata_message = TransactionOutput::metadata_signature_message_from_parts(

@@ -937,7 +937,7 @@ mod test {
         let output_features = Default::default();
 
         // Receiver data
-        let (spending_key_id, _script_key_id) = key_manager.get_next_spend_and_script_key_ids().await.unwrap();
+        let (spending_key_id, _, _script_key_id, _) = key_manager.get_next_spend_and_script_key_ids().await.unwrap();
         let commitment = key_manager
             .get_commitment(&spending_key_id, &PrivateKey::from(value))
             .await

@@ -50,7 +50,7 @@ use tari_core::{
     covenants::Covenant,
     transactions::{
         tari_amount::MicroTari,
-        transaction_components::{EncryptedData, OutputFeatures, UnblindedOutput},
+        transaction_components::{EncryptedData, KeyManagerOutput, OutputFeatures},
         CryptoFactories,
     },
 };
@@ -445,7 +445,7 @@ where
         encrypted_data: EncryptedData,
         minimum_value_promise: MicroTari,
     ) -> Result<TxId, WalletError> {
-        let unblinded_output = UnblindedOutput::new_current_version(
+        let key_manager_output = KeyManagerOutput::new_current_version(
             amount,
             spending_key.clone(),
             features.clone(),
@@ -459,26 +459,26 @@ where
             encrypted_data,
             minimum_value_promise,
         );
-        self.import_unblinded_output_as_non_rewindable(unblinded_output, source_address, message)
+        self.import_key_manager_output_as_non_rewindable(key_manager_output, source_address, message)
             .await
     }
 
     /// Import an external spendable UTXO into the wallet as a non-rewindable/non-recoverable UTXO. The output will be
     /// added to the Output Manager and made spendable. A faux incoming transaction will be created to provide a record
     /// of the event. The TxId of the generated transaction is returned.
-    pub async fn import_unblinded_output_as_non_rewindable(
+    pub async fn import_key_manager_output_as_non_rewindable(
         &mut self,
-        unblinded_output: UnblindedOutput,
+        key_manager_output: KeyManagerOutput,
         source_address: TariAddress,
         message: String,
     ) -> Result<TxId, WalletError> {
         let tx_id = self
             .transaction_service
             .import_utxo_with_status(
-                unblinded_output.value,
+                key_manager_output.value,
                 source_address,
                 message,
-                Some(unblinded_output.features.maturity),
+                Some(key_manager_output.features.maturity),
                 ImportStatus::Imported,
                 None,
                 None,
@@ -488,13 +488,13 @@ where
 
         // As non-rewindable
         self.output_manager_service
-            .add_unvalidated_output(tx_id, unblinded_output.clone(), None)
+            .add_unvalidated_output(tx_id, key_manager_output.clone(), None)
             .await?;
 
         info!(
             target: LOG_TARGET,
             "UTXO (Commitment: {}) imported into wallet as 'ImportStatus::Imported' and is non-rewindable",
-            unblinded_output
+            key_manager_output
                 .as_transaction_input(&self.factories.commitment)?
                 .commitment()
                 .map_err(WalletError::TransactionError)?

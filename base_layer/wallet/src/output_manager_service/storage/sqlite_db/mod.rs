@@ -56,7 +56,7 @@ use crate::{
         service::Balance,
         storage::{
             database::{DbKey, DbKeyValuePair, DbValue, OutputBackendQuery, OutputManagerBackend, WriteOperation},
-            models::{DbUnblindedOutput, KnownOneSidedPaymentScript},
+            models::{DbKeyManagerOutput, KnownOneSidedPaymentScript},
             OutputStatus,
         },
         UtxoSelectionCriteria,
@@ -142,7 +142,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
 
         let result = match key {
             DbKey::SpentOutput(k) => match OutputSql::find_status(&k.to_vec(), OutputStatus::Spent, &mut conn) {
-                Ok(o) => Some(DbValue::SpentOutput(Box::new(o.to_db_unblinded_output(&cipher)?))),
+                Ok(o) => Some(DbValue::SpentOutput(Box::new(o.to_db_key_manager_output(&cipher)?))),
                 Err(e) => {
                     match e {
                         OutputManagerStorageError::DieselError(DieselError::NotFound) => (),
@@ -152,7 +152,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
                 },
             },
             DbKey::UnspentOutput(k) => match OutputSql::find_status(&k.to_vec(), OutputStatus::Unspent, &mut conn) {
-                Ok(o) => Some(DbValue::UnspentOutput(Box::new(o.to_db_unblinded_output(&cipher)?))),
+                Ok(o) => Some(DbValue::UnspentOutput(Box::new(o.to_db_key_manager_output(&cipher)?))),
                 Err(e) => {
                     match e {
                         OutputManagerStorageError::DieselError(DieselError::NotFound) => (),
@@ -163,7 +163,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
             },
             DbKey::UnspentOutputHash(hash) => {
                 match OutputSql::find_by_hash(hash.as_slice(), OutputStatus::Unspent, &mut conn) {
-                    Ok(o) => Some(DbValue::UnspentOutput(Box::new(o.to_db_unblinded_output(&cipher)?))),
+                    Ok(o) => Some(DbValue::UnspentOutput(Box::new(o.to_db_key_manager_output(&cipher)?))),
                     Err(e) => {
                         match e {
                             OutputManagerStorageError::DieselError(DieselError::NotFound) => (),
@@ -175,7 +175,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
             },
             DbKey::AnyOutputByCommitment(commitment) => {
                 match OutputSql::find_by_commitment(&commitment.to_vec(), &mut conn) {
-                    Ok(o) => Some(DbValue::AnyOutput(Box::new(o.to_db_unblinded_output(&cipher)?))),
+                    Ok(o) => Some(DbValue::AnyOutput(Box::new(o.to_db_key_manager_output(&cipher)?))),
                     Err(e) => {
                         match e {
                             OutputManagerStorageError::DieselError(DieselError::NotFound) => (),
@@ -191,7 +191,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
                 Some(DbValue::AnyOutputs(
                     outputs
                         .iter()
-                        .map(|o| o.clone().to_db_unblinded_output(&cipher))
+                        .map(|o| o.clone().to_db_key_manager_output(&cipher))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))
             },
@@ -204,7 +204,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
                 Some(DbValue::UnspentOutputs(
                     outputs
                         .iter()
-                        .map(|o| o.clone().to_db_unblinded_output(&cipher))
+                        .map(|o| o.clone().to_db_key_manager_output(&cipher))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))
             },
@@ -214,7 +214,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
                 Some(DbValue::SpentOutputs(
                     outputs
                         .iter()
-                        .map(|o| o.clone().to_db_unblinded_output(&cipher))
+                        .map(|o| o.clone().to_db_key_manager_output(&cipher))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))
             },
@@ -224,7 +224,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
                 Some(DbValue::UnspentOutputs(
                     outputs
                         .iter()
-                        .map(|o| o.clone().to_db_unblinded_output(&cipher))
+                        .map(|o| o.clone().to_db_key_manager_output(&cipher))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))
             },
@@ -234,7 +234,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
                 Some(DbValue::InvalidOutputs(
                     outputs
                         .iter()
-                        .map(|o| o.clone().to_db_unblinded_output(&cipher))
+                        .map(|o| o.clone().to_db_key_manager_output(&cipher))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))
             },
@@ -266,29 +266,29 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
     fn fetch_with_features(
         &self,
         output_type: OutputType,
-    ) -> Result<Vec<DbUnblindedOutput>, OutputManagerStorageError> {
+    ) -> Result<Vec<DbKeyManagerOutput>, OutputManagerStorageError> {
         let mut conn = self.database_connection.get_pooled_connection()?;
         let outputs = OutputSql::index_by_output_type(output_type, &mut conn)?;
         let cipher = acquire_read_lock!(self.cipher);
 
         outputs
             .iter()
-            .map(|o| o.clone().to_db_unblinded_output(&cipher))
+            .map(|o| o.clone().to_db_key_manager_output(&cipher))
             .collect::<Result<Vec<_>, _>>()
     }
 
-    fn fetch_sorted_unspent_outputs(&self) -> Result<Vec<DbUnblindedOutput>, OutputManagerStorageError> {
+    fn fetch_sorted_unspent_outputs(&self) -> Result<Vec<DbKeyManagerOutput>, OutputManagerStorageError> {
         let mut conn = self.database_connection.get_pooled_connection()?;
         let outputs = OutputSql::index_unspent(&mut conn)?;
         let cipher = acquire_read_lock!(self.cipher);
 
         outputs
             .into_iter()
-            .map(|o| o.to_db_unblinded_output(&cipher))
+            .map(|o| o.to_db_key_manager_output(&cipher))
             .collect::<Result<Vec<_>, _>>()
     }
 
-    fn fetch_mined_unspent_outputs(&self) -> Result<Vec<DbUnblindedOutput>, OutputManagerStorageError> {
+    fn fetch_mined_unspent_outputs(&self) -> Result<Vec<DbKeyManagerOutput>, OutputManagerStorageError> {
         let start = Instant::now();
         let mut conn = self.database_connection.get_pooled_connection()?;
         let acquire_lock = start.elapsed();
@@ -307,11 +307,11 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
 
         outputs
             .into_iter()
-            .map(|o| o.to_db_unblinded_output(&cipher))
+            .map(|o| o.to_db_key_manager_output(&cipher))
             .collect::<Result<Vec<_>, _>>()
     }
 
-    fn fetch_invalid_outputs(&self, timestamp: i64) -> Result<Vec<DbUnblindedOutput>, OutputManagerStorageError> {
+    fn fetch_invalid_outputs(&self, timestamp: i64) -> Result<Vec<DbKeyManagerOutput>, OutputManagerStorageError> {
         let start = Instant::now();
         let mut conn = self.database_connection.get_pooled_connection()?;
         let acquire_lock = start.elapsed();
@@ -330,11 +330,11 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
 
         outputs
             .into_iter()
-            .map(|o| o.to_db_unblinded_output(&cipher))
+            .map(|o| o.to_db_key_manager_output(&cipher))
             .collect::<Result<Vec<_>, _>>()
     }
 
-    fn fetch_unspent_mined_unconfirmed_outputs(&self) -> Result<Vec<DbUnblindedOutput>, OutputManagerStorageError> {
+    fn fetch_unspent_mined_unconfirmed_outputs(&self) -> Result<Vec<DbKeyManagerOutput>, OutputManagerStorageError> {
         let start = Instant::now();
         let mut conn = self.database_connection.get_pooled_connection()?;
         let acquire_lock = start.elapsed();
@@ -353,7 +353,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
 
         outputs
             .into_iter()
-            .map(|o| o.to_db_unblinded_output(&cipher))
+            .map(|o| o.to_db_key_manager_output(&cipher))
             .collect::<Result<Vec<_>, _>>()
     }
 
@@ -378,7 +378,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
                         match OutputSql::find_by_commitment(&commitment.to_vec(), conn) {
                             Ok(o) => {
                                 o.delete(conn)?;
-                                Ok(Some(DbValue::AnyOutput(Box::new(o.to_db_unblinded_output(&cipher)?))))
+                                Ok(Some(DbValue::AnyOutput(Box::new(o.to_db_key_manager_output(&cipher)?))))
                             },
                             Err(e) => match e {
                                 OutputManagerStorageError::DieselError(DieselError::NotFound) => Ok(None),
@@ -412,7 +412,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
         result
     }
 
-    fn fetch_pending_incoming_outputs(&self) -> Result<Vec<DbUnblindedOutput>, OutputManagerStorageError> {
+    fn fetch_pending_incoming_outputs(&self) -> Result<Vec<DbKeyManagerOutput>, OutputManagerStorageError> {
         let start = Instant::now();
         let mut conn = self.database_connection.get_pooled_connection()?;
         let acquire_lock = start.elapsed();
@@ -438,7 +438,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
         }
         outputs
             .iter()
-            .map(|o| o.clone().to_db_unblinded_output(&cipher))
+            .map(|o| o.clone().to_db_key_manager_output(&cipher))
             .collect::<Result<Vec<_>, _>>()
     }
 
@@ -647,8 +647,8 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
     fn short_term_encumber_outputs(
         &self,
         tx_id: TxId,
-        outputs_to_send: &[DbUnblindedOutput],
-        outputs_to_receive: &[DbUnblindedOutput],
+        outputs_to_send: &[DbKeyManagerOutput],
+        outputs_to_receive: &[DbKeyManagerOutput],
     ) -> Result<(), OutputManagerStorageError> {
         let start = Instant::now();
         let mut conn = self.database_connection.get_pooled_connection()?;
@@ -782,7 +782,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
         Ok(())
     }
 
-    fn get_last_mined_output(&self) -> Result<Option<DbUnblindedOutput>, OutputManagerStorageError> {
+    fn get_last_mined_output(&self) -> Result<Option<DbKeyManagerOutput>, OutputManagerStorageError> {
         let start = Instant::now();
         let mut conn = self.database_connection.get_pooled_connection()?;
         let acquire_lock = start.elapsed();
@@ -799,12 +799,12 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
             );
         }
         match output {
-            Some(o) => Ok(Some(o.to_db_unblinded_output(&cipher)?)),
+            Some(o) => Ok(Some(o.to_db_key_manager_output(&cipher)?)),
             None => Ok(None),
         }
     }
 
-    fn get_last_spent_output(&self) -> Result<Option<DbUnblindedOutput>, OutputManagerStorageError> {
+    fn get_last_spent_output(&self) -> Result<Option<DbKeyManagerOutput>, OutputManagerStorageError> {
         let start = Instant::now();
         let mut conn = self.database_connection.get_pooled_connection()?;
         let acquire_lock = start.elapsed();
@@ -821,7 +821,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
             );
         }
         match output {
-            Some(o) => Ok(Some(o.to_db_unblinded_output(&cipher)?)),
+            Some(o) => Ok(Some(o.to_db_key_manager_output(&cipher)?)),
             None => Ok(None),
         }
     }
@@ -1050,7 +1050,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
         Ok(())
     }
 
-    fn add_unvalidated_output(&self, output: DbUnblindedOutput, tx_id: TxId) -> Result<(), OutputManagerStorageError> {
+    fn add_unvalidated_output(&self, output: DbKeyManagerOutput, tx_id: TxId) -> Result<(), OutputManagerStorageError> {
         let start = Instant::now();
         let mut conn = self.database_connection.get_pooled_connection()?;
         let acquire_lock = start.elapsed();
@@ -1080,7 +1080,7 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
         selection_criteria: &UtxoSelectionCriteria,
         amount: u64,
         tip_height: Option<u64>,
-    ) -> Result<Vec<DbUnblindedOutput>, OutputManagerStorageError> {
+    ) -> Result<Vec<DbKeyManagerOutput>, OutputManagerStorageError> {
         let start = Instant::now();
         let mut conn = self.database_connection.get_pooled_connection()?;
         let acquire_lock = start.elapsed();
@@ -1097,32 +1097,32 @@ impl OutputManagerBackend for OutputManagerSqliteDatabase {
         );
         outputs
             .iter()
-            .map(|o| o.clone().to_db_unblinded_output(&cipher))
+            .map(|o| o.clone().to_db_key_manager_output(&cipher))
             .collect::<Result<Vec<_>, _>>()
     }
 
-    fn fetch_outputs_by_tx_id(&self, tx_id: TxId) -> Result<Vec<DbUnblindedOutput>, OutputManagerStorageError> {
+    fn fetch_outputs_by_tx_id(&self, tx_id: TxId) -> Result<Vec<DbKeyManagerOutput>, OutputManagerStorageError> {
         let mut conn = self.database_connection.get_pooled_connection()?;
         let outputs = OutputSql::find_by_tx_id(tx_id, &mut conn)?;
         let cipher = acquire_read_lock!(self.cipher);
 
         outputs
             .iter()
-            .map(|o| o.clone().to_db_unblinded_output(&cipher))
+            .map(|o| o.clone().to_db_key_manager_output(&cipher))
             .collect::<Result<Vec<_>, _>>()
     }
 
-    fn fetch_outputs_by(&self, q: OutputBackendQuery) -> Result<Vec<DbUnblindedOutput>, OutputManagerStorageError> {
+    fn fetch_outputs_by(&self, q: OutputBackendQuery) -> Result<Vec<DbKeyManagerOutput>, OutputManagerStorageError> {
         let mut conn = self.database_connection.get_pooled_connection()?;
         let cipher = acquire_read_lock!(self.cipher);
         Ok(OutputSql::fetch_outputs_by(q, &mut conn)?
             .into_iter()
             .filter_map(|x| {
-                x.to_db_unblinded_output(&cipher)
+                x.to_db_key_manager_output(&cipher)
                     .map_err(|e| {
                         error!(
                             target: LOG_TARGET,
-                            "failed to convert `OutputSql` to `DbUnblindedOutput`: {:#?}", e
+                            "failed to convert `OutputSql` to `DbKeyManagerOutput`: {:#?}", e
                         );
                         e
                     })
@@ -1388,7 +1388,7 @@ mod test {
     use tari_core::transactions::{
         tari_amount::MicroTari,
         test_helpers::{create_key_manager_output_with_data, TestParams as TestParamsHelpers},
-        transaction_components::{OutputFeatures, TransactionInput, UnblindedOutput},
+        transaction_components::{KeyManagerOutput, OutputFeatures, TransactionInput},
         CryptoFactories,
     };
     use tari_script::script;
@@ -1397,21 +1397,20 @@ mod test {
     use tempfile::tempdir;
 
     use crate::output_manager_service::storage::{
-        models::DbUnblindedOutput,
+        models::DbKeyManagerOutput,
         sqlite_db::{new_output_sql::NewOutputSql, output_sql::OutputSql, OutputStatus, UpdateOutput},
         OutputSource,
     };
 
-    pub fn make_input(val: MicroTari) -> (TransactionInput, UnblindedOutput) {
+    pub fn make_input(val: MicroTari) -> (TransactionInput, KeyManagerOutput) {
         let test_params = TestParamsHelpers::new();
         let factory = CommitmentFactory::default();
 
-        let unblinded_output =
-            create_key_manager_output_with_data(script!(Nop), OutputFeatures::default(), &test_params, val)
-                .unwrap();
-        let input = unblinded_output.as_transaction_input(&factory).unwrap();
+        let key_manager_output =
+            create_key_manager_output_with_data(script!(Nop), OutputFeatures::default(), &test_params, val).unwrap();
+        let input = key_manager_output.as_transaction_input(&factory).unwrap();
 
-        (input, unblinded_output)
+        (input, key_manager_output)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1456,8 +1455,9 @@ mod test {
 
         for _i in 0..2 {
             let (_, uo) = make_input(MicroTari::from(100 + OsRng.next_u64() % 1000));
-            let uo = DbUnblindedOutput::from_unblinded_output(uo, &factories, None, OutputSource::Unknown, None, None)
-                .unwrap();
+            let uo =
+                DbKeyManagerOutput::from_key_manager_output(uo, &factories, None, OutputSource::Unknown, None, None)
+                    .unwrap();
             let o = NewOutputSql::new(uo, OutputStatus::Unspent, None, None, &cipher).unwrap();
             outputs.push(o.clone());
             outputs_unspent.push(o.clone());
@@ -1466,8 +1466,9 @@ mod test {
 
         for _i in 0..3 {
             let (_, uo) = make_input(MicroTari::from(100 + OsRng.next_u64() % 1000));
-            let uo = DbUnblindedOutput::from_unblinded_output(uo, &factories, None, OutputSource::Unknown, None, None)
-                .unwrap();
+            let uo =
+                DbKeyManagerOutput::from_key_manager_output(uo, &factories, None, OutputSource::Unknown, None, None)
+                    .unwrap();
             let o = NewOutputSql::new(uo, OutputStatus::Spent, None, None, &cipher).unwrap();
             outputs.push(o.clone());
             outputs_spent.push(o.clone());
@@ -1592,8 +1593,8 @@ mod test {
         let (_, uo) = make_input(MicroTari::from(100 + OsRng.next_u64() % 1000));
         let decrypted_spending_key = uo.spending_key.to_vec();
 
-        let uo =
-            DbUnblindedOutput::from_unblinded_output(uo, &factories, None, OutputSource::Unknown, None, None).unwrap();
+        let uo = DbKeyManagerOutput::from_key_manager_output(uo, &factories, None, OutputSource::Unknown, None, None)
+            .unwrap();
 
         let output = NewOutputSql::new(uo, OutputStatus::Unspent, None, None, &cipher).unwrap();
 

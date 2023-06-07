@@ -86,7 +86,7 @@ diesel::table! {
     outputs (id) {
         id -> Integer,
         commitment -> Nullable<Binary>,
-        spending_key -> Binary,
+        spending_key -> Text,
         value -> BigInt,
         output_type -> Integer,
         maturity -> BigInt,
@@ -94,7 +94,7 @@ diesel::table! {
         hash -> Nullable<Binary>,
         script -> Binary,
         input_data -> Binary,
-        script_private_key -> Binary,
+        script_private_key -> Text,
         script_lock_height -> BigInt,
         sender_offset_public_key -> Binary,
         metadata_signature_ephemeral_commitment -> Binary,

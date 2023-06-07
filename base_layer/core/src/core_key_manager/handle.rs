@@ -238,7 +238,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             .await
     }
 
-    async fn get_next_spend_and_script_key_ids(&self) -> Result<(TariKeyId, TariKeyId), KeyManagerServiceError> {
+    async fn get_next_spend_and_script_key_ids(&self) -> Result<(TariKeyId, PublicKey, TariKeyId, PublicKey), KeyManagerServiceError> {
         (*self.core_key_manager_inner)
             .read()
             .await

@@ -223,8 +223,8 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         }
     }
 
-    pub async fn get_next_spend_and_script_key_ids(&self) -> Result<(TariKeyId, TariKeyId), KeyManagerServiceError> {
-        let (spend_key_id, _) = self
+    pub async fn get_next_spend_and_script_key_ids(&self) -> Result<(TariKeyId, PublicKey, TariKeyId, PublicKey), KeyManagerServiceError> {
+        let (spend_key_id, spend_public_key) = self
             .get_next_key_id(&CoreKeyManagerBranch::CommitmentMask.get_branch_key())
             .await?;
         let index = spend_key_id
@@ -236,7 +236,8 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             branch: CoreKeyManagerBranch::ScriptKey.get_branch_key(),
             index,
         };
-        Ok((spend_key_id, script_key_id))
+        let script_public_key  = self.get_public_key_at_key_id(&script_key_id).await?;
+        Ok((spend_key_id, spend_public_key, script_key_id, script_public_key))
     }
 
     /// Search the specified branch key manager key chain to find the index of the specified key.

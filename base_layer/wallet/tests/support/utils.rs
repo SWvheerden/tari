@@ -22,10 +22,13 @@
 
 use rand::{CryptoRng, Rng};
 use tari_common_types::types::{CommitmentFactory, PrivateKey, PublicKey};
-use tari_core::transactions::{
-    tari_amount::MicroTari,
-    test_helpers::{create_key_manager_output_with_data, TestParams as TestParamsHelpers},
-    transaction_components::{OutputFeatures, TransactionInput, UnblindedOutput},
+use tari_core::{
+    test_helpers::TestKeyManager,
+    transactions::{
+        tari_amount::MicroTari,
+        test_helpers::{create_key_manager_output_with_data, TestParams as TestParamsHelpers},
+        transaction_components::{KeyManagerOutput, OutputFeatures, TransactionInput},
+    },
 };
 use tari_crypto::keys::{PublicKey as PublicKeyTrait, SecretKey as SecretKeyTrait};
 use tari_script::script;
@@ -54,10 +57,12 @@ pub async fn make_non_recoverable_input<R: Rng + CryptoRng>(
     _rng: &mut R,
     val: MicroTari,
     factory: &CommitmentFactory,
-) -> (TransactionInput, UnblindedOutput) {
-    let test_params = TestParamsHelpers::new();
+    features: &OutputFeatures,
+    key_manager: &TestKeyManager,
+) -> (TransactionInput, KeyManagerOutput) {
+    let test_params = TestParamsHelpers::new(key_manager);
     let utxo =
-        create_key_manager_output_with_data(script!(Nop), OutputFeatures::default(), &test_params, val).unwrap();
+        create_key_manager_output_with_data(script!(Nop), features.clone(), &test_params, val, key_manager).unwrap();
     (
         utxo.as_transaction_input(factory)
             .expect("Should be able to make transaction input"),
@@ -69,11 +74,11 @@ pub async fn make_input_with_features<R: Rng + CryptoRng>(
     _rng: &mut R,
     value: MicroTari,
     factory: &CommitmentFactory,
-    features: Option<OutputFeatures>,
-) -> (TransactionInput, UnblindedOutput) {
-    let test_params = TestParamsHelpers::new();
-    let utxo = create_key_manager_output_with_data(script!(Nop), features.unwrap_or_default(), &test_params, value)
-        .unwrap();
+    features: OutputFeatures,
+    key_manager: &TestKeyManager,
+) -> (TransactionInput, KeyManagerOutput) {
+    let test_params = TestParamsHelpers::new(key_manager);
+    let utxo = create_key_manager_output_with_data(script!(Nop), features, &test_params, value, key_manager).unwrap();
     (
         utxo.as_transaction_input(factory)
             .expect("Should be able to make transaction input"),

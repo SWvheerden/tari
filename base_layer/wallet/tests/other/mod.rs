@@ -283,7 +283,8 @@ async fn test_wallet() {
     let mut alice_event_stream = alice_wallet.transaction_service.get_event_stream();
 
     let value = MicroTari::from(1000);
-    let (_utxo, uo1) = make_non_recoverable_input(&mut OsRng, MicroTari(2500), &factories.commitment).await;
+    let key_manager = create_test_core_key_manager_with_memory_db();
+    let (_utxo, uo1) = make_non_recoverable_input(&mut OsRng, MicroTari(2500), &factories.commitment,&OutputFeatures::default(), &key_manager).await;
 
     alice_wallet.output_manager_service.add_output(uo1, None).await.unwrap();
 
@@ -588,7 +589,8 @@ async fn test_store_and_forward_send_tx() {
         .unwrap();
 
     let value = MicroTari::from(1000);
-    let (_utxo, uo1) = make_non_recoverable_input(&mut OsRng, MicroTari(2500), &factories.commitment).await;
+    let key_manager = create_test_core_key_manager_with_memory_db();
+    let (_utxo, uo1) = make_non_recoverable_input(&mut OsRng, MicroTari(2500), &factories.commitment,&OutputFeatures::default(), &key_manager).await;
 
     alice_wallet.output_manager_service.add_output(uo1, None).await.unwrap();
 
