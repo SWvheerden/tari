@@ -523,17 +523,12 @@ mod fetch_header_containing_kernel_mmr {
         let key_manager = create_test_core_key_manager_with_memory_db();
         let (blocks, outputs) = add_many_chained_blocks(1, &db, &key_manager).await;
         let num_genesis_kernels = genesis.block().body.kernels().len() as u64;
-<<<<<<< HEAD
-        let (txns, _) = schema_to_transaction(&[txn_schema!(from: vec![outputs[0].clone()], to: vec![50 * T])], &key_manager).await;
-=======
-        dbg!("hie");
-        let key_manager = create_test_core_key_manager_with_memory_db();
+
         let (txns, _) = schema_to_transaction(
             &[txn_schema!(from: vec![outputs[0].clone()], to: vec![50 * T])],
             &key_manager,
         )
         .await;
->>>>>>> 8ce40ef28 (Refactor transaction output)
 
         let (block, _) = create_next_block(&db, &blocks[0], txns, &key_manager).await;
         db.add_block(block).unwrap();
