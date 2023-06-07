@@ -27,7 +27,6 @@ use std::{iter, mem::size_of, path::Path, sync::Arc};
 
 pub use block_spec::{BlockSpec, BlockSpecs};
 use chacha20poly1305::{Key, KeyInit, XChaCha20Poly1305};
-use futures::executor::block_on;
 use rand::{distributions::Alphanumeric, rngs::OsRng, Rng, RngCore};
 use tari_common::configuration::Network;
 use tari_common_sqlite::connection::{DbConnection, DbConnectionUrl};
@@ -102,7 +101,7 @@ pub fn create_orphan_block(block_height: u64, transactions: Vec<Transaction>, co
     header.into_builder().with_transactions(transactions).build()
 }
 
-pub fn create_block(
+pub async fn create_block(
     rules: &ConsensusManager,
     prev_block: &Block,
     spec: BlockSpec,
@@ -127,15 +126,13 @@ pub fn create_block(
         branch: CoreKeyManagerBranch::Coinbase.get_branch_key(),
         index: block_height,
     };
-    let (coinbase, coinbase_output) = block_on(
+    let (coinbase, coinbase_output) =
         CoinbaseBuilder::new(km.clone())
             .with_block_height(header.height)
             .with_fees(0.into())
             .with_spend_key_id(spend_key_id.clone())
             .with_script_key_id(spend_key_id)
-            .build_with_reward(rules.consensus_constants(block_height), reward),
-    )
-    .unwrap();
+            .build_with_reward(rules.consensus_constants(block_height), reward).await.unwrap();
 
     let mut block = header
         .into_builder()

@@ -32,7 +32,7 @@ use crate::{
     blocks::BlockValidationError,
     consensus::{ConsensusConstantsBuilder, ConsensusManager},
     core_key_manager::CoreKeyManagerBranch,
-    test_helpers::{blockchain::TestBlockchain, create_test_core_key_manager_with_memory_db, BlockSpec},
+    test_helpers::{blockchain::TestBlockchain, BlockSpec},
     transactions::{
         aggregated_body::AggregateBody,
         tari_amount::T,
@@ -66,7 +66,7 @@ fn setup() -> (TestBlockchain, BlockBodyFullValidator) {
 async fn it_passes_if_block_is_valid() {
     let (blockchain, validator) = setup();
 
-    let (chain_block, _) = blockchain.create_next_tip(BlockSpec::default());
+    let (chain_block, _) = blockchain.create_next_tip(BlockSpec::default()).await;
 
     // TODO: the correct mmr roots should probably be calculated on the test helper functions to create blocks
     let (mut block, mmr_roots) = blockchain
@@ -89,7 +89,7 @@ async fn it_passes_if_block_is_valid() {
 async fn it_checks_the_coinbase_reward() {
     let (blockchain, validator) = setup();
 
-    let (block, _) = blockchain.create_chained_block(block_spec!("A", parent: "GB", reward: 10 * T, ));
+    let (block, _) = blockchain.create_chained_block(block_spec!("A", parent: "GB", reward: 10 * T, )).await;
     let txn = blockchain.db().db_read_access().unwrap();
     let err = validator.validate_body(&*txn, block.block()).unwrap_err();
     println!("err {:?}", err);
@@ -105,23 +105,22 @@ async fn it_checks_the_coinbase_reward() {
 async fn it_checks_exactly_one_coinbase() {
     let (blockchain, validator) = setup();
 
-    let (mut block, coinbase) = blockchain.create_unmined_block(block_spec!("A1", parent: "GB"));
-    let key_manager = create_test_core_key_manager_with_memory_db();
+    let (mut block, coinbase) = blockchain.create_unmined_block(block_spec!("A1", parent: "GB")).await;
     let spend_key_id = KeyId::Managed {
         branch: CoreKeyManagerBranch::Coinbase.get_branch_key(),
         index: 42,
     };
-    let (_, coinbase_output) = CoinbaseBuilder::new(key_manager.clone())
+    let (_, coinbase_output) = CoinbaseBuilder::new(blockchain.km.clone())
         .with_block_height(1)
         .with_fees(0.into())
-        .with_spend_key_id(spend_key_id)
+        .with_spend_key_id(spend_key_id.clone()).with_script_key_id(spend_key_id)
         .build_with_reward(blockchain.rules().consensus_constants(1), coinbase.value)
         .await
         .unwrap();
 
     block
         .body
-        .add_output(coinbase_output.as_transaction_output(&key_manager).await.unwrap());
+        .add_output(coinbase_output.as_transaction_output(&blockchain.km).await.unwrap());
     let block = blockchain.mine_block("GB", block, 1.into());
 
     let txn = blockchain.db().db_read_access().unwrap();
@@ -133,7 +132,7 @@ async fn it_checks_exactly_one_coinbase() {
         ))
     ));
 
-    let (block, _) = blockchain.create_unmined_block(block_spec!("A2", parent: "GB", skip_coinbase: true,));
+    let (block, _) = blockchain.create_unmined_block(block_spec!("A2", parent: "GB", skip_coinbase: true,)).await;
     let block = blockchain.mine_block("GB", block, 1.into());
 
     let err = validator.validate_body(&*txn, block.block()).unwrap_err();
@@ -147,17 +146,17 @@ async fn it_checks_exactly_one_coinbase() {
 async fn it_checks_double_spends() {
     let (mut blockchain, validator) = setup();
 
-    let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).unwrap();
+    let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).await.unwrap();
     let (txs, _) = schema_to_transaction(&[txn_schema!(from: vec![coinbase_a], to: vec![50 * T])], &blockchain.km).await;
 
     blockchain
-        .add_next_tip(block_spec!("1", transactions: txs.iter().map(|t| (**t).clone()).collect()))
+        .add_next_tip(block_spec!("1", transactions: txs.iter().map(|t| (**t).clone()).collect())).await
         .unwrap();
     let (block, _) = blockchain.create_next_tip(
         BlockSpec::new()
             .with_transactions(txs.iter().map(|t| (**t).clone()).collect())
             .finish(),
-    );
+    ).await;
     let txn = blockchain.db().db_read_access().unwrap();
     let err = validator.validate_body(&*txn, block.block()).unwrap_err();
     assert!(matches!(err, ValidationError::DuplicateKernelError(_)));
@@ -167,7 +166,7 @@ async fn it_checks_double_spends() {
 async fn it_checks_input_maturity() {
     let (mut blockchain, validator) = setup();
 
-    let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).unwrap();
+    let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).await.unwrap();
     let mut schema = txn_schema!(from: vec![coinbase_a], to: vec![50 * T]);
     schema.from[0].features.maturity = 100;
     let (txs, _) = schema_to_transaction(&[schema], &blockchain.km).await;
@@ -176,7 +175,7 @@ async fn it_checks_input_maturity() {
         BlockSpec::new()
             .with_transactions(txs.iter().map(|t| (**t).clone()).collect())
             .finish(),
-    );
+    ).await;
     let txn = blockchain.db().db_read_access().unwrap();
     let err = validator.validate_body(&*txn, block.block()).unwrap_err();
     assert!(matches!(
@@ -190,13 +189,13 @@ async fn it_checks_input_maturity() {
 async fn it_checks_txo_sort_order() {
     let (mut blockchain, validator) = setup();
 
-    let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).unwrap();
+    let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).await.unwrap();
 
     let schema1 = txn_schema!(from: vec![coinbase_a], to: vec![50 * T, 12 * T]);
     let (txs, _) = schema_to_transaction(&[schema1], &blockchain.km).await;
     let txs = txs.into_iter().map(|t| Arc::try_unwrap(t).unwrap()).collect::<Vec<_>>();
 
-    let (mut block, _) = blockchain.create_unmined_block(block_spec!("B->A", transactions: txs));
+    let (mut block, _) = blockchain.create_unmined_block(block_spec!("B->A", transactions: txs)).await;
     let outputs = block.body.outputs().iter().rev().cloned().collect::<Vec<_>>();
     let inputs = block.body.inputs().clone();
     let kernels = block.body.kernels().clone();
@@ -220,13 +219,13 @@ async fn it_limits_the_script_byte_size() {
         .build();
     let (mut blockchain, validator) = setup_with_rules(rules);
 
-    let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).unwrap();
+    let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).await.unwrap();
 
     let mut schema1 = txn_schema!(from: vec![coinbase_a], to: vec![50 * T, 12 * T]);
     schema1.script = script!(Nop Nop Nop);
     let (txs, _) = schema_to_transaction(&[schema1], &blockchain.km).await;
     let txs = txs.into_iter().map(|t| Arc::try_unwrap(t).unwrap()).collect::<Vec<_>>();
-    let (block, _) = blockchain.create_next_tip(block_spec!("B", transactions: txs));
+    let (block, _) = blockchain.create_next_tip(block_spec!("B", transactions: txs)).await;
 
     let txn = blockchain.db().db_read_access().unwrap();
     let err = validator.validate_body(&*txn, block.block()).unwrap_err();
@@ -244,13 +243,13 @@ async fn it_rejects_invalid_input_metadata() {
         .build();
     let (mut blockchain, validator) = setup_with_rules(rules);
 
-    let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).unwrap();
+    let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).await.unwrap();
 
     let mut schema1 = txn_schema!(from: vec![coinbase_a], to: vec![50 * T, 12 * T]);
     schema1.from[0].sender_offset_public_key = Default::default();
     let (txs, _) = schema_to_transaction(&[schema1], &blockchain.km).await;
     let txs = txs.into_iter().map(|t| Arc::try_unwrap(t).unwrap()).collect::<Vec<_>>();
-    let (block, _) = blockchain.create_next_tip(block_spec!("B", transactions: txs));
+    let (block, _) = blockchain.create_next_tip(block_spec!("B", transactions: txs)).await;
 
     let txn = blockchain.db().db_read_access().unwrap();
     let err = validator.validate_body(&*txn, block.block()).unwrap_err();
@@ -260,7 +259,7 @@ async fn it_rejects_invalid_input_metadata() {
 #[tokio::test]
 async fn it_rejects_zero_conf_double_spends() {
     let (mut blockchain, validator) = setup();
-    let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).unwrap();
+    let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).await.unwrap();
 
     let schema = txn_schema!(from: vec![coinbase], to: vec![201 * T]);
     let (initial_tx, outputs) = schema_to_transaction(&[schema], &blockchain.km).await;
@@ -278,7 +277,7 @@ async fn it_rejects_zero_conf_double_spends() {
         .map(|b| Arc::try_unwrap(b).unwrap())
         .collect::<Vec<_>>();
 
-    let (unmined, _) = blockchain.create_unmined_block(block_spec!("2", parent: "1", transactions: transactions));
+    let (unmined, _) = blockchain.create_unmined_block(block_spec!("2", parent: "1", transactions: transactions)).await;
     let txn = blockchain.db().db_read_access().unwrap();
     let err = validator.validate_body(&*txn, &unmined).unwrap_err();
     assert!(matches!(err, ValidationError::UnsortedOrDuplicateInput));
@@ -300,13 +299,13 @@ mod body_only {
         let mut blockchain = TestBlockchain::create(rules.clone());
         let validator = BlockBodyFullValidator::new(rules, true);
 
-        let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).unwrap();
+        let (_, coinbase_a) = blockchain.add_next_tip(block_spec!("A")).await.unwrap();
 
         let mut schema1 = txn_schema!(from: vec![coinbase_a], to: vec![50 * T, 12 * T]);
         schema1.from[0].sender_offset_public_key = Default::default();
         let (txs, _) = schema_to_transaction(&[schema1], &blockchain.km).await;
         let txs = txs.into_iter().map(|t| Arc::try_unwrap(t).unwrap()).collect::<Vec<_>>();
-        let (block, _) = blockchain.create_next_tip(BlockSpec::new().with_transactions(txs).finish());
+        let (block, _) = blockchain.create_next_tip(BlockSpec::new().with_transactions(txs).finish()).await;
 
         let metadata = blockchain.db().get_chain_metadata().unwrap();
 
@@ -335,7 +334,7 @@ mod orphan_validator {
             .build();
         let mut blockchain = TestBlockchain::create(rules.clone());
         let validator = BlockBodyInternalConsistencyValidator::new(rules, false, CryptoFactories::default());
-        let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).unwrap();
+        let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).await.unwrap();
 
         let schema = txn_schema!(from: vec![coinbase], to: vec![201 * T]);
         let (initial_tx, outputs) = schema_to_transaction(&[schema], &blockchain.km).await;
@@ -353,7 +352,7 @@ mod orphan_validator {
             .map(|b| Arc::try_unwrap(b).unwrap())
             .collect::<Vec<_>>();
 
-        let (unmined, _) = blockchain.create_unmined_block(block_spec!("2", parent: "1", transactions: transactions));
+        let (unmined, _) = blockchain.create_unmined_block(block_spec!("2", parent: "1", transactions: transactions)).await;
         let err = validator.validate(&unmined).unwrap_err();
         assert!(matches!(err, ValidationError::UnsortedOrDuplicateInput));
     }
@@ -370,14 +369,14 @@ mod orphan_validator {
             .build();
         let mut blockchain = TestBlockchain::create(rules.clone());
         let validator = BlockBodyInternalConsistencyValidator::new(rules, false, CryptoFactories::default());
-        let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).unwrap();
+        let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).await.unwrap();
 
         let schema = txn_schema!(from: vec![coinbase], to: vec![201 * T]);
         let (tx, _) = schema_to_transaction(&[schema], &blockchain.km).await;
 
         let transactions = tx.into_iter().map(|b| Arc::try_unwrap(b).unwrap()).collect::<Vec<_>>();
 
-        let (unmined, _) = blockchain.create_unmined_block(block_spec!("2", parent: "1", transactions: transactions));
+        let (unmined, _) = blockchain.create_unmined_block(block_spec!("2", parent: "1", transactions: transactions)).await;
         let err = validator.validate(&unmined).unwrap_err();
         unpack_enum!(ValidationError::OutputTypeNotPermitted { output_type } = err);
         assert_eq!(output_type, OutputType::Standard);
@@ -395,14 +394,14 @@ mod orphan_validator {
             .build();
         let mut blockchain = TestBlockchain::create(rules.clone());
         let validator = BlockBodyInternalConsistencyValidator::new(rules, false, CryptoFactories::default());
-        let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).unwrap();
+        let (_, coinbase) = blockchain.append(block_spec!("1", parent: "GB")).await.unwrap();
 
         let schema = txn_schema!(from: vec![coinbase], to: vec![201 * T]);
         let (tx, _) = schema_to_transaction(&[schema], &blockchain.km).await;
 
         let transactions = tx.into_iter().map(|b| Arc::try_unwrap(b).unwrap()).collect::<Vec<_>>();
 
-        let (unmined, _) = blockchain.create_unmined_block(block_spec!("2", parent: "1", transactions: transactions));
+        let (unmined, _) = blockchain.create_unmined_block(block_spec!("2", parent: "1", transactions: transactions)).await;
         let err = validator.validate(&unmined).unwrap_err();
         unpack_enum!(ValidationError::RangeProofTypeNotPermitted { range_proof_type } = err);
         assert_eq!(range_proof_type, RangeProofType::BulletProofPlus);
