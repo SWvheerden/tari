@@ -149,7 +149,7 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
     async fn encrypt_data_for_recovery(
         &self,
         spend_key_id: &TariKeyId,
-        custom_recovery_key_id: &Option<TariKeyId>,
+        custom_recovery_key_id: Option<&TariKeyId>,
         value: u64,
     ) -> Result<EncryptedData, TransactionError>;
 
@@ -157,7 +157,7 @@ pub trait BaseLayerKeyManagerInterface: KeyManagerInterface<PublicKey> {
         &self,
         commitment: &Commitment,
         data: &EncryptedData,
-        custom_recovery_key_id: &Option<TariKeyId>,
+        custom_recovery_key_id: Option<&TariKeyId>,
     ) -> Result<(TariKeyId, MicroTari), TransactionError>;
 
     async fn get_script_offset(

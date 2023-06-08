@@ -107,12 +107,13 @@ impl KeyManagerOutputBuilder {
         self
     }
 
-    pub async fn with_encrypted_data<KM: BaseLayerKeyManagerInterface>(
+    pub async fn encrypt_data_for_recovery<KM: BaseLayerKeyManagerInterface>(
         mut self,
         key_manager: &KM,
+        custom_recovery_key_id: Option<&TariKeyId>,
     ) -> Result<Self, TransactionError> {
         self.encrypted_data = key_manager
-            .encrypt_data_for_recovery(&self.spending_key_id, &None, self.value.as_u64())
+            .encrypt_data_for_recovery(&self.spending_key_id, custom_recovery_key_id, self.value.as_u64())
             .await?;
         Ok(self)
     }
@@ -249,7 +250,7 @@ mod test {
         let kmob = kmob.with_script_private_key(script_key_id);
         let kmob = kmob.with_features(OutputFeatures::default());
         let kmob = kmob
-            .with_encrypted_data(&key_manager)
+            .encrypt_data_for_recovery(&key_manager, None)
             .await
             .unwrap()
             .sign_as_sender_and_receiver_using_key_id(&key_manager, &sender_offset_private_key_id)
@@ -269,7 +270,7 @@ mod test {
                     .await
                     .unwrap());
                 let (recovered_key_id, recovered_value) = key_manager
-                    .try_commitment_key_recovery(&output.commitment, &output.encrypted_data, &None)
+                    .try_commitment_key_recovery(&output.commitment, &output.encrypted_data, None)
                     .await
                     .unwrap();
                 assert_eq!(recovered_key_id, spending_key_id);
@@ -295,7 +296,7 @@ mod test {
         let kmob = kmob.with_script_private_key(script_key_id);
         let kmob = kmob.with_features(OutputFeatures::default());
         let kmob = kmob
-            .with_encrypted_data(&key_manager)
+            .encrypt_data_for_recovery(&key_manager, None)
             .await
             .unwrap()
             .sign_as_sender_and_receiver_using_key_id(&key_manager, &sender_offset_private_key_id)

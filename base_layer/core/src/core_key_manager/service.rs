@@ -762,7 +762,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     pub async fn encrypt_data_for_recovery(
         &self,
         spend_key_id: &TariKeyId,
-        custom_recovery_key_id: &Option<TariKeyId>,
+        custom_recovery_key_id: Option<&TariKeyId>,
         value: u64,
     ) -> Result<EncryptedData, TransactionError> {
         let recovery_key = if let Some(key_id) = custom_recovery_key_id {
@@ -781,7 +781,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         &self,
         commitment: &Commitment,
         encrypted_data: &EncryptedData,
-        custom_recovery_key_id: &Option<TariKeyId>,
+        custom_recovery_key_id: Option<&TariKeyId>,
     ) -> Result<(TariKeyId, MicroTari), TransactionError> {
         let recovery_key = if let Some(key_id) = custom_recovery_key_id {
             self.get_private_key(key_id).await?

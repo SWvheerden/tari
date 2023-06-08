@@ -83,7 +83,7 @@ async fn key_manager_input() {
 
     assert_eq!(*input.features().unwrap(), OutputFeatures::default());
     let (_, value) = key_manager
-        .try_commitment_key_recovery(&input.commitment().unwrap(), &input.encrypted_data().unwrap(), &None)
+        .try_commitment_key_recovery(&input.commitment().unwrap(), &input.encrypted_data().unwrap(), None)
         .await
         .unwrap();
     assert_eq!(value, i.value);
@@ -495,7 +495,7 @@ async fn test_output_recover_openings() {
     let output = key_manager_output.as_transaction_output(&key_manager).await.unwrap();
 
     let (mask, value) = key_manager
-        .try_commitment_key_recovery(&output.commitment, &output.encrypted_data, &None)
+        .try_commitment_key_recovery(&output.commitment, &output.encrypted_data, None)
         .await
         .unwrap();
     assert_eq!(value, key_manager_output.value);

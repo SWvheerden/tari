@@ -348,7 +348,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     async fn encrypt_data_for_recovery(
         &self,
         spend_key_id: &TariKeyId,
-        custom_recovery_key_id: &Option<TariKeyId>,
+        custom_recovery_key_id: Option<&TariKeyId>,
         value: u64,
     ) -> Result<EncryptedData, TransactionError> {
         (*self.core_key_manager_inner)
@@ -362,7 +362,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         &self,
         commitment: &Commitment,
         data: &EncryptedData,
-        custom_recovery_key_id: &Option<TariKeyId>,
+        custom_recovery_key_id: Option<&TariKeyId>,
     ) -> Result<(TariKeyId, MicroTari), TransactionError> {
         (*self.core_key_manager_inner)
             .read()

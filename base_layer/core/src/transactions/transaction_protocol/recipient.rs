@@ -312,7 +312,7 @@ mod test {
         assert_eq!(data.partial_signature, kernel_signature);
 
         let (mask, value) = key_manager
-            .try_commitment_key_recovery(&data.output.commitment, &data.output.encrypted_data, &None)
+            .try_commitment_key_recovery(&data.output.commitment, &data.output.encrypted_data, None)
             .await
             .unwrap();
         assert_eq!(output.spending_key_id, mask);

@@ -150,7 +150,7 @@ impl TestParams {
         let output = KeyManagerOutputBuilder::new(params.value, self.spend_key.clone())
             .with_features(params.features)
             .with_script(params.script.clone())
-            .with_encrypted_data(key_manager)
+            .encrypt_data_for_recovery(key_manager, None)
             .await
             .unwrap()
             .with_input_data(input_data)
@@ -729,7 +729,7 @@ pub async fn create_stx_protocol(
         let output = KeyManagerOutputBuilder::new(val, spending_key)
             .with_features(schema.features.clone())
             .with_script(schema.script.clone())
-            .with_encrypted_data(key_manager)
+            .encrypt_data_for_recovery(key_manager, None)
             .await
             .unwrap()
             .with_input_data(input_data)
@@ -834,7 +834,7 @@ pub async fn create_utxo(
         .await
         .unwrap();
     let encrypted_data = key_manager
-        .encrypt_data_for_recovery(&spending_key_id, &None, value.into())
+        .encrypt_data_for_recovery(&spending_key_id, None, value.into())
         .await
         .unwrap();
     let (sender_offset_key_id, _) = key_manager

@@ -951,7 +951,7 @@ mod test {
 
         // Encrypted value
         let encrypted_data = key_manager
-            .encrypt_data_for_recovery(&spending_key_id, &None, value)
+            .encrypt_data_for_recovery(&spending_key_id, None, value)
             .await
             .unwrap();
 
@@ -1576,12 +1576,12 @@ mod test {
         let output_1 = &tx.body.outputs()[1];
 
         if let Ok((key, _value)) = key_manager_alice
-            .try_commitment_key_recovery(&output_0.commitment, &output_0.encrypted_data, &None)
+            .try_commitment_key_recovery(&output_0.commitment, &output_0.encrypted_data, None)
             .await
         {
             assert_eq!(key, change_params.change_spend_key);
         } else if let Ok((key, _value)) = key_manager_alice
-            .try_commitment_key_recovery(&output_1.commitment, &output_1.encrypted_data, &None)
+            .try_commitment_key_recovery(&output_1.commitment, &output_1.encrypted_data, None)
             .await
         {
             assert_eq!(key, change_params.change_spend_key);

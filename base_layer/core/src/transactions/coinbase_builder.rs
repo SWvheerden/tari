@@ -235,7 +235,7 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
         let output_features = OutputFeatures::create_coinbase(height + constants.coinbase_lock_height(), self.extra);
         let encrypted_data = self
             .key_manager
-            .encrypt_data_for_recovery(&spending_key_id, &None, total_reward.into())
+            .encrypt_data_for_recovery(&spending_key_id, None, total_reward.into())
             .await?;
         let minimum_value_promise = MicroTari::zero();
 

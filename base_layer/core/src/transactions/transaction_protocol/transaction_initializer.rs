@@ -370,7 +370,7 @@ where KM: BaseLayerKeyManagerInterface
 
                         let encrypted_data = self
                             .key_manager
-                            .encrypt_data_for_recovery(&change_key_id, &None, v.as_u64())
+                            .encrypt_data_for_recovery(&change_key_id, None, v.as_u64())
                             .await
                             .map_err(|e| e.to_string())?;
 
