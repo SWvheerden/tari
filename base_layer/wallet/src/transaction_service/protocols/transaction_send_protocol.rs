@@ -270,7 +270,7 @@ where
 
         // Build single round message and advance sender state
         let msg = sender_protocol
-            .build_single_round_message()
+            .build_single_round_message(&self.resources.core_key_manager_service).await
             .map_err(|e| TransactionServiceProtocolError::new(self.id, TransactionServiceError::from(e)))?;
         let tx_id = msg.tx_id;
         if tx_id != self.id {

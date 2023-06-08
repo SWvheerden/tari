@@ -2295,9 +2295,9 @@ mod test {
         },
     };
 
-    #[test]
+    #[tokio::test]
     #[allow(clippy::too_many_lines)]
-    fn test_crud() {
+    async fn test_crud() {
         let factories = CryptoFactories::default();
         let db_name = format!("{}.sqlite3", string(8).as_str());
         let temp_dir = tempdir().unwrap();
@@ -2338,7 +2338,7 @@ mod test {
             OutputFeatures::default(),
             &test_params,
             MicroTari::from(100_000),
-        )
+        ).await
         .unwrap();
         let amount = MicroTari::from(10_000);
         builder
