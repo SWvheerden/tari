@@ -126,7 +126,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             .await
     }
 
-    async fn get_next_key_id<T: Into<String> + Send>(&self, branch: T) -> Result<TariKeyId, KeyManagerServiceError> {
+    async fn get_next_key_id<T: Into<String> + Send>(&self, branch: T) -> Result<(TariKeyId,PublicKey), KeyManagerServiceError> {
         (*self.core_key_manager_inner)
             .read()
             .await

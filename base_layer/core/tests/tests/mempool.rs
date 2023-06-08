@@ -1113,7 +1113,7 @@ async fn consensus_validation_large_tx() {
     let amount_per_output = (amount - fee) / output_count as u64;
     let amount_for_last_output = (amount - fee) - amount_per_output * (output_count as u64 - 1);
     let mut key_manager_outputs = Vec::with_capacity(output_count);
-    let input_kernel_nonce = key_manager
+    let (input_kernel_nonce, mut pub_nonce) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
         .await
         .unwrap();
@@ -1122,7 +1122,6 @@ async fn consensus_validation_large_tx() {
             .get_txo_kernel_signature_excess_with_offset(&input.spending_key_id, &input_kernel_nonce)
             .await
             .unwrap();
-    let mut pub_nonce = key_manager.get_public_key_at_key_id(&input_kernel_nonce).await.unwrap();
     let mut sender_offsets = Vec::new();
 
     for i in 0..output_count {

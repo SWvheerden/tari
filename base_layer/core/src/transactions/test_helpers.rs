@@ -88,27 +88,27 @@ pub struct TestParams {
 
 impl TestParams {
     pub async fn new(key_manager: &TestKeyManager) -> TestParams {
-        let spend_key = key_manager
+        let (spend_key,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::CommitmentMask.get_branch_key())
             .await
             .unwrap();
-        let change_spend_key = key_manager
+        let (change_spend_key,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::CommitmentMask.get_branch_key())
             .await
             .unwrap();
-        let script_private_key = key_manager
+        let (script_private_key,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::ScriptKey.get_branch_key())
             .await
             .unwrap();
-        let sender_offset_private_key = key_manager
+        let (sender_offset_private_key,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
-        let kernel_nonce = key_manager
+        let (kernel_nonce,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
-        let ephemeral_public_nonce = key_manager
+        let (ephemeral_public_nonce,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
@@ -263,11 +263,10 @@ pub async fn create_random_signature_from_secret_key(
     txo_type: TxoType,
 ) -> (PublicKey, Signature) {
     let tx_meta = TransactionMetadata::new_with_features(fee, lock_height, kernel_features);
-    let nonce_id = key_manager
+    let (nonce_id,total_nonce) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
         .await
         .unwrap();
-    let total_nonce = key_manager.get_public_key_at_key_id(&nonce_id).await.unwrap();
     let total_excess = key_manager.get_public_key_at_key_id(&secret_key_id).await.unwrap();
     let kernel_version = TransactionKernelVersion::get_current_version();
     let kernel_message = TransactionKernel::build_kernel_signature_message(
@@ -608,23 +607,20 @@ pub async fn create_sender_transaction_protocol_with(
     let constants = rules.consensus_constants(0).clone();
     let mut stx_builder = SenderTransactionProtocol::builder(constants, key_manager.clone());
     let script = script!(Nop);
-    let change_script_key_id = key_manager
+    let (change_script_key_id,_) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::ScriptKey.get_branch_key())
         .await
         .unwrap();
-    let change_secret_key_id = key_manager
+    let (change_secret_key_id,change_public_key) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::CommitmentMask.get_branch_key())
         .await
         .unwrap();
-    let change_sender_offset_key_id = key_manager
+    let (change_sender_offset_key_id,_) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
         .await
         .unwrap();
     let change_covenant = Covenant::default();
-    let change_public_key = key_manager
-        .get_public_key_at_key_id(&change_secret_key_id)
-        .await
-        .unwrap();
+
     let change_input_data = inputs!(change_public_key);
     stx_builder
         .with_lock_height(lock_height)
@@ -677,23 +673,19 @@ pub async fn create_stx_protocol(
         .clone();
     let mut stx_builder = SenderTransactionProtocol::builder(constants, key_manager.clone());
     let script = script!(Nop);
-    let change_script_key_id = key_manager
+    let (change_script_key_id,change_public_key) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::ScriptKey.get_branch_key())
         .await
         .unwrap();
-    let change_secret_key_id = key_manager
+    let (change_secret_key_id,_) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::CommitmentMask.get_branch_key())
         .await
         .unwrap();
-    let change_sender_offset_key_id = key_manager
+    let (change_sender_offset_key_id,_) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
         .await
         .unwrap();
     let change_covenant = Covenant::default();
-    let change_public_key = key_manager
-        .get_public_key_at_key_id(&change_script_key_id)
-        .await
-        .unwrap();
     let change_input_data = inputs!(change_public_key);
 
     stx_builder
@@ -713,20 +705,16 @@ pub async fn create_stx_protocol(
     }
     let mut outputs = Vec::with_capacity(schema.to.len());
     for val in schema.to {
-        let spending_key = key_manager
+        let (spending_key,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::CommitmentMask.get_branch_key())
             .await
             .unwrap();
-        let sender_offset_key_id = key_manager
+        let (sender_offset_key_id,sender_offset_public_key) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
-        let script_key_id = key_manager
+        let (script_key_id,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::ScriptKey.get_branch_key())
-            .await
-            .unwrap();
-        let sender_offset_public_key = key_manager
-            .get_public_key_at_key_id(&sender_offset_key_id)
             .await
             .unwrap();
         let script_public_key = key_manager.get_public_key_at_key_id(&script_key_id).await.unwrap();
@@ -759,21 +747,17 @@ pub async fn create_stx_protocol(
         stx_builder.with_output(output, sender_offset_key_id).await.unwrap();
     }
     for mut utxo in schema.to_outputs {
-        let sender_offset_key_id = key_manager
+        let (sender_offset_key_id,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
         let metadata_message = TransactionOutput::metadata_signature_message(&utxo);
-        let ephemeral_commitment_nonce_id = key_manager
+        let (ephemeral_commitment_nonce_id,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
-        let ephemeral_pubkey_nonce_id = key_manager
+        let (ephemeral_pubkey_nonce_id,ephemeral_pubkey) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await
-            .unwrap();
-        let ephemeral_pubkey = key_manager
-            .get_public_key_at_key_id(&ephemeral_pubkey_nonce_id)
             .await
             .unwrap();
         let ephemeral_commitment = key_manager
@@ -811,11 +795,10 @@ pub async fn create_coinbase_kernel(spending_key_id: &TariKeyId, key_manager: &T
     let kernel_features = KernelFeatures::COINBASE_KERNEL;
     let kernel_message =
         TransactionKernel::build_kernel_signature_message(&kernel_version, 0.into(), 0, &kernel_features, &None);
-    let public_nonce_id = key_manager
+    let (public_nonce_id,public_nonce) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
         .await
         .unwrap();
-    let public_nonce = key_manager.get_public_key_at_key_id(&public_nonce_id).await.unwrap();
     let public_spend_key = key_manager.get_public_key_at_key_id(&spending_key_id).await.unwrap();
 
     let kernel_signature = key_manager
@@ -862,7 +845,7 @@ pub async fn create_utxo(
     covenant: &Covenant,
     minimum_value_promise: MicroTari,
 ) -> (TransactionOutput, TariKeyId, TariKeyId) {
-    let spending_key_id = key_manager
+    let (spending_key_id,_) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::CommitmentMask.get_branch_key())
         .await
         .unwrap();
@@ -870,7 +853,7 @@ pub async fn create_utxo(
         .encrypt_data_for_recovery(&spending_key_id, &None, value.into())
         .await
         .unwrap();
-    let sender_offset_key_id = key_manager
+    let (sender_offset_key_id,_) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
         .await
         .unwrap();
@@ -882,16 +865,12 @@ pub async fn create_utxo(
         &encrypted_data,
         minimum_value_promise,
     );
-    let ephemeral_commitment_nonce_id = key_manager
+    let (ephemeral_commitment_nonce_id,_) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
         .await
         .unwrap();
-    let ephemeral_pubkey_nonce_id = key_manager
+    let (ephemeral_pubkey_nonce_id,ephemeral_pubkey) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-        .await
-        .unwrap();
-    let ephemeral_pubkey = key_manager
-        .get_public_key_at_key_id(&ephemeral_pubkey_nonce_id)
         .await
         .unwrap();
     let ephemeral_commitment = key_manager

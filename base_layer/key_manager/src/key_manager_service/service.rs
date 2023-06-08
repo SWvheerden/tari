@@ -104,7 +104,7 @@ where
         })
     }
 
-    pub async fn get_next_key_id(&self, branch: &str) -> Result<KeyId<PK>, KeyManagerServiceError> {
+    pub async fn get_next_key_id(&self, branch: &str) -> Result<(KeyId<PK>, PK), KeyManagerServiceError> {
         let mut km = self
             .key_managers
             .get(branch)
@@ -112,10 +112,15 @@ where
             .lock()
             .await;
         self.db.increment_key_index(branch)?;
-        Ok(KeyId::Managed {
-            branch: branch.to_string(),
-            index: km.increment_key_index(1),
-        })
+        let index = km.increment_key_index(1);
+        let key = km.derive_public_key(index)?.key;
+        Ok((
+            KeyId::Managed {
+                branch: branch.to_string(),
+                index,
+            },
+            key,
+        ))
     }
 
     pub async fn get_static_key_id(&self, branch: &str) -> Result<KeyId<PK>, KeyManagerServiceError> {

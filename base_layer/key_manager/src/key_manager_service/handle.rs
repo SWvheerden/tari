@@ -88,7 +88,10 @@ where
             .await
     }
 
-    async fn get_next_key_id<T: Into<String> + Send>(&self, branch: T) -> Result<KeyId<PK>, KeyManagerServiceError> {
+    async fn get_next_key_id<T: Into<String> + Send>(
+        &self,
+        branch: T,
+    ) -> Result<(KeyId<PK>, PK), KeyManagerServiceError> {
         (*self.key_manager_inner)
             .read()
             .await

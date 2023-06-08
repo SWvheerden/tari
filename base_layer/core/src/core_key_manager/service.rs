@@ -167,7 +167,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         })
     }
 
-    pub async fn get_next_key_id(&self, branch: &str) -> Result<TariKeyId, KeyManagerServiceError> {
+    pub async fn get_next_key_id(&self, branch: &str) -> Result<(TariKeyId, PublicKey), KeyManagerServiceError> {
         let mut km = self
             .key_managers
             .get(branch)
@@ -175,10 +175,15 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             .lock()
             .await;
         self.db.increment_key_index(branch)?;
-        Ok(KeyId::Managed {
-            branch: branch.to_string(),
-            index: km.increment_key_index(1),
-        })
+        let index = km.increment_key_index(1);
+        let key = km.derive_public_key(index)?.key;
+        Ok((
+            KeyId::Managed {
+                branch: branch.to_string(),
+                index,
+            },
+            key,
+        ))
     }
 
     pub async fn get_static_key_id(&self, branch: &str) -> Result<TariKeyId, KeyManagerServiceError> {
@@ -219,7 +224,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     }
 
     pub async fn get_next_spend_and_script_key_ids(&self) -> Result<(TariKeyId, TariKeyId), KeyManagerServiceError> {
-        let spend_key_id = self
+        let (spend_key_id,_) = self
             .get_next_key_id(&CoreKeyManagerBranch::CommitmentMask.get_branch_key())
             .await?;
         let index = spend_key_id

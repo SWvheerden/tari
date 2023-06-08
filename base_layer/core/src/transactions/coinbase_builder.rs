@@ -207,12 +207,11 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
             &metadata.kernel_features,
             &metadata.burn_commitment,
         );
-        let public_nonce_id = self
+        let (public_nonce_id,public_nonce) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
 
-        let public_nonce = self.key_manager.get_public_key_at_key_id(&public_nonce_id).await?;
         let public_spend_key = self.key_manager.get_public_key_at_key_id(&spending_key_id).await?;
         let public_script_key = self.key_manager.get_public_key_at_key_id(&script_key_id).await?;
 
@@ -252,24 +251,16 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
 
         // because the coinbase does not have a spending input with a script key, we use the output spending key as
         // replacement to calculate the script offset
-        let sender_offset_public_key_id = self
+        let (sender_offset_public_key_id,sender_offset_public_key) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
-        let sender_offset_public_key = self
-            .key_manager
-            .get_public_key_at_key_id(&sender_offset_public_key_id)
-            .await?;
-        let ephemeral_pubkey_nonce_id = self
+        let (ephemeral_pubkey_nonce_id,ephemeral_pubkey) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await?;
-        let ephemeral_pubkey = self
-            .key_manager
-            .get_public_key_at_key_id(&ephemeral_pubkey_nonce_id)
             .await?;
 
-        let ephemeral_commitment_nonce_id = self
+        let (ephemeral_commitment_nonce_id,_) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
@@ -597,7 +588,7 @@ mod test {
         let mut coinbase_kernel2 = tx2.body.kernels()[0].clone();
         assert!(coinbase_kernel2.is_coinbase());
         coinbase_kernel2.features = KernelFeatures::empty();
-        let new_nonce = key_manager
+        let (new_nonce, nonce) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
@@ -612,7 +603,6 @@ mod test {
             .get_txo_kernel_signature_excess_with_offset(&output.spending_key_id, &new_nonce)
             .await
             .unwrap();
-        let nonce = key_manager.get_public_key_at_key_id(&new_nonce).await.unwrap();
         let sig = key_manager
             .get_txo_kernel_signature(
                 &output.spending_key_id,

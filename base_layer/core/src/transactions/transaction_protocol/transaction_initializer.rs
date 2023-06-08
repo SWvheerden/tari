@@ -151,7 +151,7 @@ where KM: BaseLayerKeyManagerInterface
         recipient_minimum_value_promise: MicroTari,
         amount: MicroTari,
     ) -> Result<&mut Self, KeyManagerServiceError> {
-        let recipient_ephemeral_public_key_nonce = self
+        let (recipient_ephemeral_public_key_nonce,_) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
@@ -176,7 +176,7 @@ where KM: BaseLayerKeyManagerInterface
 
     /// Adds an input to the transaction.
     pub async fn with_input(&mut self, input: KeyManagerOutput) -> Result<&mut Self, KeyManagerServiceError> {
-        let nonce_id = self
+        let (nonce_id,_) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
@@ -195,7 +195,7 @@ where KM: BaseLayerKeyManagerInterface
         output: KeyManagerOutput,
         sender_offset_key_id: TariKeyId,
     ) -> Result<&mut Self, KeyManagerServiceError> {
-        let nonce_id = self
+        let (nonce_id,_) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
@@ -383,20 +383,14 @@ where KM: BaseLayerKeyManagerInterface
                             .await
                             .map_err(|e| e.to_string())?;
 
-                        let ephemeral_pubkey_nonce = self
+                        let (ephemeral_pubkey_nonce,ephemeral_pubkey) = self
                             .key_manager
                             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
                             .await
                             .map_err(|e| e.to_string())?;
-                        let ephemeral_commitment_nonce = self
+                        let (ephemeral_commitment_nonce,_) = self
                             .key_manager
                             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-                            .await
-                            .map_err(|e| e.to_string())?;
-
-                        let ephemeral_pubkey = self
-                            .key_manager
-                            .get_public_key_at_key_id(&ephemeral_pubkey_nonce)
                             .await
                             .map_err(|e| e.to_string())?;
                         let features = OutputFeatures::default();
@@ -519,25 +513,12 @@ where KM: BaseLayerKeyManagerInterface
             return self.build_err("Fee is less than the minimum");
         }
 
-        // // Create transaction outputs
-        // let mut outputs = match self
-        //     .sender_custom_outputs
-        //     .iter()
-        //     .map(|o| o.as_transaction_output(factories))
-        //     .collect::<Result<Vec<TransactionOutput>, _>>()
-        // {
-        //     Ok(o) => o,
-        //     Err(e) => {
-        //         return self.build_err(&e.to_string());
-        //     },
-        // };
-
         let change_output_pair = match { change_output } {
             Some((output, sender_offset_key_id)) => {
                 if self.sender_custom_outputs.len() >= MAX_TRANSACTION_OUTPUTS {
                     return self.build_err("Too many outputs in transaction");
                 }
-                let nonce_id = match self
+                let (nonce_id,_) = match self
                     .key_manager
                     .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
                     .await
@@ -553,47 +534,6 @@ where KM: BaseLayerKeyManagerInterface
             },
             None => None,
         };
-        // if let Some(change_key_manager_output) = change_output.clone() {
-        //
-        //     // self.excess_blinding_factor = self.excess_blinding_factor +
-        // change_unblinded_output.spending_key.clone();
-        //
-        //     // let change_output = match change_unblinded_output.as_transaction_output(factories) {
-        //     //     Ok(o) => o,
-        //     //     Err(e) => {
-        //     //         return self.build_err(e.to_string().as_str());
-        //     //     },
-        //     // };
-        //     // self.sender_custom_outputs.push(change_unblinded_output);
-        //     // self.sender_offset_private_keys
-        //     //     .push(change_output_sender_offset_private_key);
-        //     // outputs.push(change_output);
-        // }
-
-        // Prevent overflow attacks by imposing sane limits on outputs
-
-        // // Calculate the Inputs portion of Gamma so we don't have to store the individual script private keys in
-        // // RawTransactionInfo while we wait for the recipients reply
-        // let mut gamma = PrivateKey::default();
-        // for uo in &self.unblinded_inputs {
-        //     gamma = gamma + uo.script_private_key.clone();
-        // }
-        //
-        // if outputs.len() != self.sender_offset_private_keys.len() {
-        //     return self
-        //         .build_err("There should be the same number of sender added outputs as script offset private keys");
-        // }
-
-        // for sender_offset_private_key in &self.sender_offset_private_keys {
-        //     gamma = gamma - sender_offset_private_key.clone();
-        // }
-
-        // let nonce = self.private_nonce.clone().unwrap();
-        // let public_nonce = PublicKey::from_secret_key(&nonce);
-        // let offset = self.offset.clone().unwrap();
-        // let excess_blinding_factor = self.excess_blinding_factor.clone();
-        // let offset_blinding_factor = &excess_blinding_factor - &offset;
-        // let excess = PublicKey::from_secret_key(&offset_blinding_factor);
 
         let spending_key = match self
             .key_manager

@@ -311,16 +311,12 @@ async fn inbound_fetch_blocks_before_horizon_height() {
         &utxo.encrypted_data,
         utxo.minimum_value_promise,
     );
-    let ephemeral_commitment_nonce_id = key_manager
+    let (ephemeral_commitment_nonce_id, _) = key_manager
         .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
         .await
         .unwrap();
-    let ephemeral_pubkey_nonce_id = key_manager
+    let (ephemeral_pubkey_nonce_id,ephemeral_pubkey)  = key_manager
         .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-        .await
-        .unwrap();
-    let ephemeral_pubkey = key_manager
-        .get_public_key_at_key_id(&ephemeral_pubkey_nonce_id)
         .await
         .unwrap();
     let ephemeral_commitment = key_manager

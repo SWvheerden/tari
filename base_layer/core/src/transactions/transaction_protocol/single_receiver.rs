@@ -50,7 +50,7 @@ impl SingleReceiverTransactionProtocol {
         SingleReceiverTransactionProtocol::validate_sender_data(sender_info)?;
         let transaction_output = output.as_transaction_output(key_manager).await?;
 
-        let nonce_id = key_manager
+        let (nonce_id,public_nonce) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
         let tx_meta = if output.is_burned() {
@@ -63,7 +63,6 @@ impl SingleReceiverTransactionProtocol {
         let public_excess = key_manager
             .get_txo_kernel_signature_excess_with_offset(&output.spending_key_id, &nonce_id)
             .await?;
-        let public_nonce = key_manager.get_public_key_at_key_id(&nonce_id).await?;
 
         let kernel_message = TransactionKernel::build_kernel_signature_message(
             &TransactionKernelVersion::get_current_version(),
@@ -223,7 +222,7 @@ mod test {
             0.into(),
         );
         let metadata_message = TransactionOutput::metadata_signature_message(&bob_output);
-        let ephemeral_commitment_nonce_id = key_manager
+        let (ephemeral_commitment_nonce_id,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();

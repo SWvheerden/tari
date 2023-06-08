@@ -921,21 +921,13 @@ mod test {
         let key_manager = create_test_core_key_manager_with_memory_db();
 
         // Sender data
-        let ephemeral_pubkey_id = key_manager
+        let (ephemeral_pubkey_id,ephemeral_pubkey) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await
-            .unwrap();
-        let ephemeral_pubkey = key_manager
-            .get_public_key_at_key_id(&ephemeral_pubkey_id)
             .await
             .unwrap();
         let value = 1000u64;
-        let sender_offset_key_id = key_manager
+        let (sender_offset_key_id,sender_offset_public_key) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await
-            .unwrap();
-        let sender_offset_public_key = key_manager
-            .get_public_key_at_key_id(&sender_offset_key_id)
             .await
             .unwrap();
         let txo_version = TransactionOutputVersion::get_current_version();
@@ -972,7 +964,7 @@ mod test {
             minimum_value_promise,
         );
 
-        let ephemeral_commitment_nonce_id = key_manager
+        let (ephemeral_commitment_nonce_id,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
@@ -1150,7 +1142,7 @@ mod test {
         );
 
         let metadata_message = TransactionOutput::metadata_signature_message(&bob_output);
-        let ephemeral_commitment_nonce_id = key_manager
+        let (ephemeral_commitment_nonce_id,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
@@ -1279,7 +1271,7 @@ mod test {
         );
 
         let metadata_message = TransactionOutput::metadata_signature_message(&bob_output);
-        let ephemeral_commitment_nonce_id = key_manager
+        let (ephemeral_commitment_nonce_id,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();

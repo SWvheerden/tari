@@ -168,13 +168,12 @@ impl KeyManagerOutputBuilder {
             &self.encrypted_data,
             self.minimum_value_promise,
         );
-        let ephemeral_commitment_nonce_id = key_manager
+        let (ephemeral_commitment_nonce_id,_) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
-        let ephemeral_pubkey_nonce_id = key_manager
+        let (ephemeral_pubkey_nonce_id,ephemeral_pubkey) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
-        let ephemeral_pubkey = key_manager.get_public_key_at_key_id(&ephemeral_pubkey_nonce_id).await?;
         let ephemeral_commitment = key_manager
             .get_metadata_signature_ephemeral_commitment(&ephemeral_commitment_nonce_id, self.features.range_proof_type)
             .await?;
@@ -249,12 +248,8 @@ mod test {
         let kmob = KeyManagerOutputBuilder::new(value, spending_key_id.clone());
         let kmob = kmob.with_script(TariScript::new(vec![]));
         assert!(kmob.clone().try_build().is_err());
-        let sender_offset_private_key_id = key_manager
+        let (sender_offset_private_key_id,sender_offset_public_key)  = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await
-            .unwrap();
-        let sender_offset_public_key = key_manager
-            .get_public_key_at_key_id(&sender_offset_private_key_id)
             .await
             .unwrap();
         let kmob = kmob.with_sender_offset_public_key(sender_offset_public_key);
@@ -300,12 +295,8 @@ mod test {
         let value = MicroTari(100);
         let kmob = KeyManagerOutputBuilder::new(value, spending_key_id.clone());
         let kmob = kmob.with_script(TariScript::new(vec![]));
-        let sender_offset_private_key_id = key_manager
+        let (sender_offset_private_key_id,sender_offset_public_key) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await
-            .unwrap();
-        let sender_offset_public_key = key_manager
-            .get_public_key_at_key_id(&sender_offset_private_key_id)
             .await
             .unwrap();
         let kmob = kmob.with_sender_offset_public_key(sender_offset_public_key);
@@ -325,17 +316,13 @@ mod test {
                 assert!(output.verify_metadata_signature().is_ok());
 
                 // Now we can swap out the metadata signature for one built from partial sender and receiver signatures
-                let ephemeral_pubkey_id = key_manager
+                let (ephemeral_pubkey_id,ephemeral_pubkey) = key_manager
                     .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-                    .await
-                    .unwrap();
-                let ephemeral_pubkey = key_manager
-                    .get_public_key_at_key_id(&ephemeral_pubkey_id)
                     .await
                     .unwrap();
                 let metadata_message = TransactionOutput::metadata_signature_message(&key_manager_output);
 
-                let ephemeral_commitment_nonce_id = key_manager
+                let (ephemeral_commitment_nonce_id,_) = key_manager
                     .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
                     .await
                     .unwrap();
