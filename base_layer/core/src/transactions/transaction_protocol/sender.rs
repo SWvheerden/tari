@@ -921,12 +921,12 @@ mod test {
         let key_manager = create_test_core_key_manager_with_memory_db();
 
         // Sender data
-        let (ephemeral_pubkey_id,ephemeral_pubkey) = key_manager
+        let (ephemeral_pubkey_id, ephemeral_pubkey) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
         let value = 1000u64;
-        let (sender_offset_key_id,sender_offset_public_key) = key_manager
+        let (sender_offset_key_id, sender_offset_public_key) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
@@ -963,16 +963,10 @@ mod test {
             &encrypted_data,
             minimum_value_promise,
         );
-
-        let (ephemeral_commitment_nonce_id,_) = key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await
-            .unwrap();
         let partial_metadata_signature = key_manager
             .get_receiver_partial_metadata_signature(
                 &spending_key_id,
                 &value.into(),
-                &ephemeral_commitment_nonce_id,
                 &sender_offset_public_key,
                 &ephemeral_pubkey,
                 &txo_version,
@@ -1142,15 +1136,10 @@ mod test {
         );
 
         let metadata_message = TransactionOutput::metadata_signature_message(&bob_output);
-        let (ephemeral_commitment_nonce_id,_) = key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await
-            .unwrap();
         bob_output.metadata_signature = key_manager
             .get_receiver_partial_metadata_signature(
                 &bob_output.spending_key_id,
                 &bob_output.value.into(),
-                &ephemeral_commitment_nonce_id,
                 &bob_output.sender_offset_public_key,
                 &msg.ephemeral_public_nonce,
                 &bob_output.version,
@@ -1271,15 +1260,10 @@ mod test {
         );
 
         let metadata_message = TransactionOutput::metadata_signature_message(&bob_output);
-        let (ephemeral_commitment_nonce_id,_) = key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await
-            .unwrap();
         bob_output.metadata_signature = key_manager
             .get_receiver_partial_metadata_signature(
                 &bob_output.spending_key_id,
                 &bob_output.value.into(),
-                &ephemeral_commitment_nonce_id,
                 &bob_output.sender_offset_public_key,
                 &msg.ephemeral_public_nonce,
                 &bob_output.version,

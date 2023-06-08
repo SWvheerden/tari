@@ -50,7 +50,7 @@ impl SingleReceiverTransactionProtocol {
         SingleReceiverTransactionProtocol::validate_sender_data(sender_info)?;
         let transaction_output = output.as_transaction_output(key_manager).await?;
 
-        let (nonce_id,public_nonce) = key_manager
+        let (nonce_id, public_nonce) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
         let tx_meta = if output.is_burned() {
@@ -115,7 +115,7 @@ mod test {
     use tari_script::{script, ExecutionStack, TariScript};
 
     use crate::{
-        core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch},
+        core_key_manager::BaseLayerKeyManagerInterface,
         covenants::Covenant,
         test_helpers::create_test_core_key_manager_with_memory_db,
         transactions::{
@@ -222,15 +222,10 @@ mod test {
             0.into(),
         );
         let metadata_message = TransactionOutput::metadata_signature_message(&bob_output);
-        let (ephemeral_commitment_nonce_id,_) = key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await
-            .unwrap();
         bob_output.metadata_signature = key_manager
             .get_receiver_partial_metadata_signature(
                 &bob_output.spending_key_id,
                 &bob_output.value.into(),
-                &ephemeral_commitment_nonce_id,
                 &bob_output.sender_offset_public_key,
                 &ephemeral_public_nonce,
                 &bob_output.version,

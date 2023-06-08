@@ -25,7 +25,7 @@ use tari_common_types::types::{ComAndPubSignature, PublicKey};
 use tari_script::{ExecutionStack, TariScript};
 
 use crate::{
-    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch, TariKeyId},
+    core_key_manager::{BaseLayerKeyManagerInterface, TariKeyId},
     covenants::Covenant,
     transactions::{
         tari_amount::MicroTari,
@@ -168,24 +168,11 @@ impl KeyManagerOutputBuilder {
             &self.encrypted_data,
             self.minimum_value_promise,
         );
-        let (ephemeral_commitment_nonce_id,_) = key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await?;
-        let (ephemeral_pubkey_nonce_id,ephemeral_pubkey) = key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await?;
-        let ephemeral_commitment = key_manager
-            .get_metadata_signature_ephemeral_commitment(&ephemeral_commitment_nonce_id, self.features.range_proof_type)
-            .await?;
         let metadata_signature = key_manager
             .get_metadata_signature(
                 &self.spending_key_id,
                 &self.value.into(),
-                &ephemeral_commitment_nonce_id,
-                &ephemeral_pubkey_nonce_id,
                 &sender_offset_private_key_id,
-                &ephemeral_pubkey,
-                &ephemeral_commitment,
                 &self.version,
                 &metadata_message,
                 self.features.range_proof_type,
@@ -238,7 +225,11 @@ mod test {
     use tari_key_manager::key_manager_service::KeyManagerInterface;
 
     use super::*;
-    use crate::{test_helpers::create_test_core_key_manager_with_memory_db, transactions::CryptoFactories};
+    use crate::{
+        core_key_manager::CoreKeyManagerBranch,
+        test_helpers::create_test_core_key_manager_with_memory_db,
+        transactions::CryptoFactories,
+    };
 
     #[tokio::test]
     async fn test_try_build() {
@@ -248,7 +239,7 @@ mod test {
         let kmob = KeyManagerOutputBuilder::new(value, spending_key_id.clone());
         let kmob = kmob.with_script(TariScript::new(vec![]));
         assert!(kmob.clone().try_build().is_err());
-        let (sender_offset_private_key_id,sender_offset_public_key)  = key_manager
+        let (sender_offset_private_key_id, sender_offset_public_key) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
@@ -295,7 +286,7 @@ mod test {
         let value = MicroTari(100);
         let kmob = KeyManagerOutputBuilder::new(value, spending_key_id.clone());
         let kmob = kmob.with_script(TariScript::new(vec![]));
-        let (sender_offset_private_key_id,sender_offset_public_key) = key_manager
+        let (sender_offset_private_key_id, sender_offset_public_key) = key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await
             .unwrap();
@@ -316,21 +307,16 @@ mod test {
                 assert!(output.verify_metadata_signature().is_ok());
 
                 // Now we can swap out the metadata signature for one built from partial sender and receiver signatures
-                let (ephemeral_pubkey_id,ephemeral_pubkey) = key_manager
+                let (ephemeral_pubkey_id, ephemeral_pubkey) = key_manager
                     .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
                     .await
                     .unwrap();
                 let metadata_message = TransactionOutput::metadata_signature_message(&key_manager_output);
 
-                let (ephemeral_commitment_nonce_id,_) = key_manager
-                    .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-                    .await
-                    .unwrap();
                 let receiver_metadata_signature = key_manager
                     .get_receiver_partial_metadata_signature(
                         &key_manager_output.spending_key_id,
                         &key_manager_output.value.into(),
-                        &ephemeral_commitment_nonce_id,
                         &key_manager_output.sender_offset_public_key,
                         &ephemeral_pubkey,
                         &key_manager_output.version,

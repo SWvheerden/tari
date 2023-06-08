@@ -32,7 +32,7 @@ use tari_core::{
     },
     chain_storage::{BlockchainDatabaseConfig, DbTransaction, Validators},
     consensus::ConsensusManager,
-    core_key_manager::{BaseLayerKeyManagerInterface, CoreKeyManagerBranch},
+    core_key_manager::BaseLayerKeyManagerInterface,
     covenants::Covenant,
     mempool::{Mempool, MempoolConfig},
     test_helpers::{
@@ -311,28 +311,12 @@ async fn inbound_fetch_blocks_before_horizon_height() {
         &utxo.encrypted_data,
         utxo.minimum_value_promise,
     );
-    let (ephemeral_commitment_nonce_id, _) = key_manager
-        .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-        .await
-        .unwrap();
-    let (ephemeral_pubkey_nonce_id,ephemeral_pubkey)  = key_manager
-        .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-        .await
-        .unwrap();
-    let ephemeral_commitment = key_manager
-        .get_metadata_signature_ephemeral_commitment(&ephemeral_commitment_nonce_id, output_features.range_proof_type)
-        .await
-        .unwrap();
     let txo_version = TransactionOutputVersion::get_current_version();
     let metadata_signature = key_manager
         .get_metadata_signature(
             &spending_key_id,
             &PrivateKey::from(amount),
-            &ephemeral_commitment_nonce_id,
-            &ephemeral_pubkey_nonce_id,
             &sender_offset_key_id,
-            &ephemeral_pubkey,
-            &ephemeral_commitment,
             &txo_version,
             &metadata_message,
             output_features.range_proof_type,

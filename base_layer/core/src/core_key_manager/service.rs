@@ -224,7 +224,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
     }
 
     pub async fn get_next_spend_and_script_key_ids(&self) -> Result<(TariKeyId, TariKeyId), KeyManagerServiceError> {
-        let (spend_key_id,_) = self
+        let (spend_key_id, _) = self
             .get_next_key_id(&CoreKeyManagerBranch::CommitmentMask.get_branch_key())
             .await?;
         let index = spend_key_id
@@ -517,11 +517,10 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         Ok(self.crypto_factories.commitment.commit(&nonce_b, &nonce_a))
     }
 
-    pub async fn get_metadata_signature(
+    pub async fn get_metadata_signature_raw(
         &self,
         spending_key_id: &TariKeyId,
         value_as_private_key: &PrivateKey,
-        ephemeral_commitment_nonce_id: &TariKeyId,
         ephemeral_private_nonce_id: &TariKeyId,
         sender_offset_key_id: &TariKeyId,
         ephemeral_pubkey: &PublicKey,
@@ -535,7 +534,6 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             .get_receiver_partial_metadata_signature(
                 spending_key_id,
                 value_as_private_key,
-                ephemeral_commitment_nonce_id,
                 &sender_offset_public_key,
                 &ephemeral_pubkey,
                 txo_version,
@@ -558,19 +556,61 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         Ok(metadata_signature)
     }
 
+    pub async fn get_metadata_signature(
+        &self,
+        spending_key_id: &TariKeyId,
+        value_as_private_key: &PrivateKey,
+        sender_offset_key_id: &TariKeyId,
+        txo_version: &TransactionOutputVersion,
+        metadata_signature_message: &[u8; 32],
+        range_proof_type: RangeProofType,
+    ) -> Result<ComAndPubSignature, TransactionError> {
+        let sender_offset_public_key = self.get_public_key_at_key_id(sender_offset_key_id).await?;
+        let (ephemeral_private_nonce_id, ephemeral_pubkey) = self
+            .get_next_key_id(&CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await?;
+        let receiver_partial_metadata_signature = self
+            .get_receiver_partial_metadata_signature(
+                spending_key_id,
+                value_as_private_key,
+                &sender_offset_public_key,
+                &ephemeral_pubkey,
+                txo_version,
+                metadata_signature_message,
+                range_proof_type,
+            )
+            .await?;
+        let commitment = self.get_commitment(spending_key_id, value_as_private_key).await?;
+        let ephemeral_commitment = receiver_partial_metadata_signature.ephemeral_commitment();
+        let sender_partial_metadata_signature = self
+            .get_sender_partial_metadata_signature(
+                &ephemeral_private_nonce_id,
+                sender_offset_key_id,
+                &commitment,
+                ephemeral_commitment,
+                txo_version,
+                metadata_signature_message,
+            )
+            .await?;
+        let metadata_signature = &receiver_partial_metadata_signature + &sender_partial_metadata_signature;
+        Ok(metadata_signature)
+    }
+
     pub async fn get_receiver_partial_metadata_signature(
         &self,
         spend_key_id: &TariKeyId,
         value: &PrivateKey,
-        ephemeral_commitment_nonce_id: &TariKeyId,
         sender_offset_public_key: &PublicKey,
         ephemeral_pubkey: &PublicKey,
         txo_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
         range_proof_type: RangeProofType,
     ) -> Result<ComAndPubSignature, TransactionError> {
+        let (ephemeral_commitment_nonce_id, _) = self
+            .get_next_key_id(&CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await?;
         let (nonce_a, nonce_b) = self
-            .get_metadata_signature_ephemeral_private_key_pair(ephemeral_commitment_nonce_id, range_proof_type)
+            .get_metadata_signature_ephemeral_private_key_pair(&ephemeral_commitment_nonce_id, range_proof_type)
             .await?;
         let ephemeral_commitment = self.crypto_factories.commitment.commit(&nonce_b, &nonce_a);
         let spend_private_key = self.get_private_key(spend_key_id).await?;

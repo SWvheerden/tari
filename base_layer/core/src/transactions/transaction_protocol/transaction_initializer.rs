@@ -151,7 +151,7 @@ where KM: BaseLayerKeyManagerInterface
         recipient_minimum_value_promise: MicroTari,
         amount: MicroTari,
     ) -> Result<&mut Self, KeyManagerServiceError> {
-        let (recipient_ephemeral_public_key_nonce,_) = self
+        let (recipient_ephemeral_public_key_nonce, _) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
@@ -176,7 +176,7 @@ where KM: BaseLayerKeyManagerInterface
 
     /// Adds an input to the transaction.
     pub async fn with_input(&mut self, input: KeyManagerOutput) -> Result<&mut Self, KeyManagerServiceError> {
-        let (nonce_id,_) = self
+        let (nonce_id, _) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
@@ -195,7 +195,7 @@ where KM: BaseLayerKeyManagerInterface
         output: KeyManagerOutput,
         sender_offset_key_id: TariKeyId,
     ) -> Result<&mut Self, KeyManagerServiceError> {
-        let (nonce_id,_) = self
+        let (nonce_id, _) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
@@ -383,16 +383,6 @@ where KM: BaseLayerKeyManagerInterface
                             .await
                             .map_err(|e| e.to_string())?;
 
-                        let (ephemeral_pubkey_nonce,ephemeral_pubkey) = self
-                            .key_manager
-                            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let (ephemeral_commitment_nonce,_) = self
-                            .key_manager
-                            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-                            .await
-                            .map_err(|e| e.to_string())?;
                         let features = OutputFeatures::default();
                         let metadata_message = TransactionOutput::metadata_signature_message_from_parts(
                             &output_version,
@@ -403,25 +393,12 @@ where KM: BaseLayerKeyManagerInterface
                             minimum_value_promise,
                         );
 
-                        let ephemeral_commitment = self
-                            .key_manager
-                            .get_metadata_signature_ephemeral_commitment(
-                                &ephemeral_commitment_nonce,
-                                features.range_proof_type,
-                            )
-                            .await
-                            .map_err(|e| e.to_string())?;
-
                         let metadata_sig = self
                             .key_manager
                             .get_metadata_signature(
                                 &change_key_id,
                                 &v.into(),
-                                &ephemeral_commitment_nonce,
-                                &ephemeral_pubkey_nonce,
                                 &sender_offset_key_id,
-                                &ephemeral_pubkey,
-                                &ephemeral_commitment,
                                 &output_version,
                                 &metadata_message,
                                 features.range_proof_type,
@@ -518,7 +495,7 @@ where KM: BaseLayerKeyManagerInterface
                 if self.sender_custom_outputs.len() >= MAX_TRANSACTION_OUTPUTS {
                     return self.build_err("Too many outputs in transaction");
                 }
-                let (nonce_id,_) = match self
+                let (nonce_id, _) = match self
                     .key_manager
                     .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
                     .await

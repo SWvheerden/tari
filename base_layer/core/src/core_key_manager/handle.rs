@@ -88,7 +88,6 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         db: KeyManagerDatabase<TBackend, PublicKey>,
         crypto_factories: CryptoFactories,
     ) -> Result<Self, KeyManagerServiceError> {
-        dbg!("this should only happen once");
         Ok(CoreKeyManagerHandle {
             core_key_manager_inner: Arc::new(RwLock::new(CoreKeyManagerInner::new(
                 master_seed,
@@ -126,7 +125,10 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             .await
     }
 
-    async fn get_next_key_id<T: Into<String> + Send>(&self, branch: T) -> Result<(TariKeyId,PublicKey), KeyManagerServiceError> {
+    async fn get_next_key_id<T: Into<String> + Send>(
+        &self,
+        branch: T,
+    ) -> Result<(TariKeyId, PublicKey), KeyManagerServiceError> {
         (*self.core_key_manager_inner)
             .read()
             .await
@@ -397,11 +399,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         &self,
         spending_key_id: &TariKeyId,
         value_as_private_key: &PrivateKey,
-        ephemeral_commitment_nonce_id: &TariKeyId,
-        ephemeral_private_nonce_id: &TariKeyId,
         sender_offset_key_id: &TariKeyId,
-        ephemeral_pubkey: &PublicKey,
-        ephemeral_commitment: &Commitment,
         txo_version: &TransactionOutputVersion,
         metadata_signature_message: &[u8; 32],
         range_proof_type: RangeProofType,
@@ -412,11 +410,7 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             .get_metadata_signature(
                 spending_key_id,
                 value_as_private_key,
-                ephemeral_commitment_nonce_id,
-                ephemeral_private_nonce_id,
                 sender_offset_key_id,
-                ephemeral_pubkey,
-                ephemeral_commitment,
                 txo_version,
                 metadata_signature_message,
                 range_proof_type,
@@ -428,7 +422,6 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
         &self,
         spend_key_id: &TariKeyId,
         value: &PrivateKey,
-        ephemeral_commitment_nonce_id: &TariKeyId,
         sender_offset_public_key: &PublicKey,
         ephemeral_pubkey: &PublicKey,
         txo_version: &TransactionOutputVersion,
@@ -441,7 +434,6 @@ where TBackend: KeyManagerBackend<PublicKey> + 'static
             .get_receiver_partial_metadata_signature(
                 spend_key_id,
                 value,
-                ephemeral_commitment_nonce_id,
                 sender_offset_public_key,
                 ephemeral_pubkey,
                 txo_version,

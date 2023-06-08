@@ -207,7 +207,7 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
             &metadata.kernel_features,
             &metadata.burn_commitment,
         );
-        let (public_nonce_id,public_nonce) = self
+        let (public_nonce_id, public_nonce) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
@@ -251,26 +251,9 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
 
         // because the coinbase does not have a spending input with a script key, we use the output spending key as
         // replacement to calculate the script offset
-        let (sender_offset_public_key_id,sender_offset_public_key) = self
+        let (sender_offset_public_key_id, sender_offset_public_key) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await?;
-        let (ephemeral_pubkey_nonce_id,ephemeral_pubkey) = self
-            .key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await?;
-
-        let (ephemeral_commitment_nonce_id,_) = self
-            .key_manager
-            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-            .await?;
-
-        let ephemeral_commitment = self
-            .key_manager
-            .get_metadata_signature_ephemeral_commitment(
-                &ephemeral_commitment_nonce_id,
-                output_features.range_proof_type,
-            )
             .await?;
 
         let metadata_sig = self
@@ -278,11 +261,7 @@ where TKeyManagerInterface: BaseLayerKeyManagerInterface
             .get_metadata_signature(
                 &spending_key_id,
                 &value.into(),
-                &ephemeral_commitment_nonce_id,
-                &ephemeral_pubkey_nonce_id,
                 &sender_offset_public_key_id,
-                &ephemeral_pubkey,
-                &ephemeral_commitment,
                 &output_version,
                 &metadata_message,
                 output_features.range_proof_type,
