@@ -435,7 +435,7 @@ where
                 .send_transaction(
                     outbound_tx
                         .sender_protocol
-                        .get_single_round_message()
+                        .get_single_round_message(&self.resources.core_key_manager_service).await
                         .map_err(|e| TransactionServiceProtocolError::new(self.id, e.into()))?,
                 )
                 .await
@@ -504,7 +504,7 @@ where
                     match self.send_transaction(
                         outbound_tx
                         .sender_protocol
-                        .get_single_round_message()
+                        .get_single_round_message(&self.resources.core_key_manager_service).await
                         .map_err(|e| TransactionServiceProtocolError::new(self.id, TransactionServiceError::from(e)))?
                     ).await
                     {

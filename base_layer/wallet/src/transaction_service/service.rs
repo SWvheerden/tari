@@ -37,7 +37,7 @@ use tari_common_types::{
     burnt_proof::BurntProof,
     tari_address::TariAddress,
     transaction::{ImportStatus, TransactionDirection, TransactionStatus, TxId},
-    types::{CommitmentFactory, PrivateKey, PublicKey, Signature},
+    types::{PrivateKey, PublicKey, Signature},
 };
 use tari_comms::types::{CommsDHKE, CommsPublicKey};
 use tari_comms_dht::outbound::OutboundMessageRequester;
@@ -50,7 +50,6 @@ use tari_core::{
     transactions::{
         tari_amount::MicroTari,
         transaction_components::{
-            EncryptedData,
             KernelFeatures,
             KeyManagerOutput,
             OutputFeatures,
@@ -1106,7 +1105,6 @@ where
             .map_err(|e| TransactionServiceProtocolError::new(tx_id, e.into()))?.ok_or(TransactionServiceProtocolError::new(tx_id, TransactionServiceError::InvalidKeyId("Missing sender offset keyid".to_string())))?;
 
         let shared_secret =self.resources.core_key_manager_service.get_diffie_hellman_shared_secret(&sender_offset_private_key, destination.public_key()).await?;
-;
         let spending_key = shared_secret_to_output_spending_key(&shared_secret)
             .map_err(|e| TransactionServiceProtocolError::new(tx_id, e.into()))?;
 
@@ -1118,7 +1116,7 @@ where
 
         let minimum_value_promise = MicroTari::zero();
         let output = KeyManagerOutputBuilder::new(amount, self.spend_key.clone())
-            .with_features(output.features.clone())
+            .with_features(sender_message.features.clone())
             .with_script(script).encrypt_data_for_recovery(&self.resources.core_key_manager_service, Some(&encryption_key)).await?
             .with_input_data(inputs!(PublicKey::from_secret_key(
                 self.resources.wallet_identity.node_identity.secret_key()
@@ -1127,7 +1125,7 @@ where
             .with_sender_offset_public_key(sender_offset_public_key)
             .with_script_private_key(self.resources.wallet_identity.wallet_node_key_id.clone())
             .with_minimum_value_promise(minimum_value_promise)
-            .sign_as_sender_and_receiver_using_key_id(key_manager, &sender_offset_private_key)
+            .sign_as_sender_and_receiver_using_key_id(&self.resources.core_key_manager_service, &sender_offset_private_key)
             .await
             .unwrap()
             .try_build()
@@ -1169,7 +1167,7 @@ where
             .map_err(|e| TransactionServiceProtocolError::new(tx_id, e.into()))?;
         self.resources
             .output_manager_service
-            .add_output_with_tx_id(tx_id, key_manager_output, Some(SpendingPriority::HtlcSpendAsap))
+            .add_output_with_tx_id(tx_id, output, Some(SpendingPriority::HtlcSpendAsap))
             .await?;
         self.submit_transaction(
             transaction_broadcast_join_handles,
@@ -1248,7 +1246,7 @@ where
             .get_recipient_sender_offset_private_key()
             .map_err(|e| TransactionServiceProtocolError::new(tx_id, e.into()))?.ok_or(TransactionServiceProtocolError::new(tx_id, TransactionServiceError::InvalidKeyId("Missing sender offset keyid".to_string())))?;
 
-        let shared_secret =self.resources.core_key_manager_service.get_diffie_hellman_shared_secret(&sender_offset_private_key, destination.public_key()).await?;
+        let shared_secret =self.resources.core_key_manager_service.get_diffie_hellman_shared_secret(&sender_offset_private_key, dest_address.public_key()).await?;
         let spending_key = shared_secret_to_output_spending_key(&shared_secret)
             .map_err(|e| TransactionServiceProtocolError::new(tx_id, e.into()))?;
 
@@ -1261,7 +1259,7 @@ where
 
         let minimum_value_promise = MicroTari::zero();
         let output = KeyManagerOutputBuilder::new(amount, self.spend_key.clone())
-            .with_features(output.features.clone())
+            .with_features(sender_message.features.clone())
             .with_script(script).encrypt_data_for_recovery(&self.resources.core_key_manager_service, Some(&encryption_key)).await?
             .with_input_data(inputs!(PublicKey::from_secret_key(
                 self.resources.wallet_identity.node_identity.secret_key()
@@ -1269,7 +1267,7 @@ where
             .with_sender_offset_public_key(sender_offset_public_key)
             .with_script_private_key(self.resources.wallet_identity.wallet_node_key_id.clone())
             .with_minimum_value_promise(minimum_value_promise)
-            .sign_as_sender_and_receiver_using_key_id(key_manager, &sender_offset_private_key)
+            .sign_as_sender_and_receiver_using_key_id(&self.resources.core_key_manager_service, &sender_offset_private_key)
             .await
             .unwrap()
             .try_build()
@@ -1470,15 +1468,15 @@ where
             .get_recipient_sender_offset_private_key()
             .map_err(|e| TransactionServiceProtocolError::new(tx_id, e.into()))?.ok_or(TransactionServiceProtocolError::new(tx_id, TransactionServiceError::InvalidKeyId("Missing sender offset keyid".to_string())))?;
         let output = KeyManagerOutputBuilder::new(amount, self.spend_key.clone())
-            .with_features(output.features.clone())
+            .with_features(sender_message.features.clone())
             .with_script(script!(Nop)).encrypt_data_for_recovery(&self.resources.core_key_manager_service, Some(&recovery_key_id)).await?
             .with_input_data(inputs!(PublicKey::from_secret_key(
                 self.resources.wallet_identity.node_identity.secret_key()
             )))
-            .with_sender_offset_public_key(sender_offset_public_key)
+            .with_sender_offset_public_key(sender_message.sender_offset_public_key.clone())
             .with_script_private_key(self.resources.wallet_identity.wallet_node_key_id.clone())
-            .with_minimum_value_promise(minimum_value_promise)
-            .sign_as_sender_and_receiver_using_key_id(key_manager, &sender_offset_private_key)
+            .with_minimum_value_promise(sender_message.minimum_value_promise)
+            .sign_as_sender_and_receiver_using_key_id(&self.resources.core_key_manager_service, &sender_offset_private_key)
             .await
             .unwrap()
             .try_build()
@@ -1490,6 +1488,7 @@ where
         let recipient_reply = rtp.get_signed_data()?.clone();
         let range_proof = recipient_reply.output.proof_result()?.clone();
         let mut ownership_proof = None;
+        let commitment = recipient_reply.output.commitment.clone();
 
         if let Some(claim_public_key) = claim_public_key {
             let nonce_a = PrivateKey::random(&mut OsRng);

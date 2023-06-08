@@ -49,7 +49,6 @@ use tari_crypto::{commitment::HomomorphicCommitmentFactory, tari_utilities::Byte
 use tari_key_manager::key_manager_service::KeyId;
 use tari_script::{ExecutionStack, TariScript};
 use tari_utilities::Hidden;
-use zeroize::Zeroize;
 
 use crate::{
     output_manager_service::{

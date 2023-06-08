@@ -1394,7 +1394,7 @@ where
         let mut fee_without_change = MicroTari::from(0);
         let mut fee_with_change = MicroTari::from(0);
         for o in uo {
-            utxos_total_value += ouo.key_manager_output.value;
+            utxos_total_value += uo.key_manager_output.value;
 
             trace!(target: LOG_TARGET, "-- utxos_total_value = {:?}", utxos_total_value);
             utxos.push(o);
@@ -1490,7 +1490,7 @@ where
 
         let accumulated_amount = src_outputs
             .iter()
-            .fold(MicroTari::zero(), |acc, x| acc + xuo.key_manager_output.value);
+            .fold(MicroTari::zero(), |acc, x| acc + x.key_manager_output.value);
 
         let fee = self.get_fee_calc().calculate(
             fee_per_gram,
@@ -1535,7 +1535,7 @@ where
 
         let accumulated_amount = src_outputs
             .iter()
-            .fold(MicroTari::zero(), |acc, x| acc + xuo.key_manager_output.value);
+            .fold(MicroTari::zero(), |acc, x| acc + x.key_manager_output.value);
 
         let aftertax_amount = accumulated_amount.saturating_sub(fee);
         let amount_per_split = MicroTari(aftertax_amount.as_u64() / number_of_splits as u64);
@@ -1629,7 +1629,7 @@ where
         // accumulated value amount from given source outputs
         let accumulated_amount = src_outputs
             .iter()
-            .fold(MicroTari::zero(), |acc, x| acc + xuo.key_manager_output.value);
+            .fold(MicroTari::zero(), |acc, x| acc + x.key_manager_output.value);
 
         let fee = self.get_fee_calc().calculate(
             fee_per_gram,
@@ -1676,7 +1676,7 @@ where
                 "adding transaction input: output_hash=: {:?}",
                 src_output.hash
             );
-            tx_builder.with_input(src_outputuo.key_manager_output.clone());
+            tx_builder.with_input(src_output.key_manager_output.clone());
         });
 
         for i in 1..=number_of_splits {
@@ -1742,7 +1742,7 @@ where
             )?;
 
             tx_builder
-                .with_output(outputuo.key_manager_output.clone(), sender_offset_private_key)
+                .with_output(output.key_manager_output.clone(), sender_offset_private_key)
                 .await
                 .map_err(|e| OutputManagerError::BuildError(e.message))?;
 
@@ -1810,7 +1810,7 @@ where
         // accumulated value amount from given source outputs
         let accumulated_amount = src_outputs
             .iter()
-            .fold(MicroTari::zero(), |acc, x| acc + xuo.key_manager_output.value);
+            .fold(MicroTari::zero(), |acc, x| acc + x.key_manager_output.value);
 
         if total_split_amount >= accumulated_amount {
             return Err(OutputManagerError::NotEnoughFunds);
@@ -1895,7 +1895,7 @@ where
                 "adding transaction input: output_hash=: {:?}",
                 src_output.hash
             );
-            tx_builder.with_input(src_outputuo.key_manager_output.clone());
+            tx_builder.with_input(src_output.key_manager_output.clone());
         });
 
         // ----------------------------------------------------------------------------
@@ -1956,7 +1956,7 @@ where
             )?;
 
             tx_builder
-                .with_output(outputuo.key_manager_output.clone(), sender_offset_private_key)
+                .with_output(output.key_manager_output.clone(), sender_offset_private_key)
                 .await
                 .map_err(|e| OutputManagerError::BuildError(e.message))?;
 
@@ -2054,7 +2054,7 @@ where
 
         let accumulated_amount = src_outputs
             .iter()
-            .fold(MicroTari::zero(), |acc, x| acc + xuo.key_manager_output.value);
+            .fold(MicroTari::zero(), |acc, x| acc + x.key_manager_output.value);
 
         let fee =
             self.get_fee_calc()
@@ -2104,7 +2104,7 @@ where
                 "adding transaction input: output_hash=: {:?}",
                 src_output.hash
             );
-            tx_builder.with_input(src_outputuo.key_manager_output.clone());
+            tx_builder.with_input(src_output.key_manager_output.clone());
         });
 
         // initializing primary output
@@ -2161,7 +2161,7 @@ where
         )?;
 
         tx_builder
-            .with_output(outputuo.key_manager_output.clone(), sender_offset_private_key)
+            .with_output(output.key_manager_output.clone(), sender_offset_private_key)
             .await
             .map_err(|e| OutputManagerError::BuildError(e.message))?;
 
