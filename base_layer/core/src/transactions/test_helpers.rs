@@ -615,10 +615,6 @@ pub async fn create_sender_transaction_protocol_with(
         .get_next_key_id(CoreKeyManagerBranch::CommitmentMask.get_branch_key())
         .await
         .unwrap();
-    let (change_sender_offset_key_id, _) = key_manager
-        .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-        .await
-        .unwrap();
     let change_covenant = Covenant::default();
 
     let change_input_data = inputs!(change_public_key);
@@ -631,7 +627,6 @@ pub async fn create_sender_transaction_protocol_with(
             change_input_data,
             change_script_key_id,
             change_secret_key_id,
-            change_sender_offset_key_id,
             change_covenant,
         );
     for input in inputs {
@@ -681,10 +676,6 @@ pub async fn create_stx_protocol(
         .get_next_key_id(CoreKeyManagerBranch::CommitmentMask.get_branch_key())
         .await
         .unwrap();
-    let (change_sender_offset_key_id, _) = key_manager
-        .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
-        .await
-        .unwrap();
     let change_covenant = Covenant::default();
     let change_input_data = inputs!(change_public_key);
 
@@ -696,7 +687,6 @@ pub async fn create_stx_protocol(
             change_input_data,
             change_script_key_id,
             change_secret_key_id,
-            change_sender_offset_key_id,
             change_covenant,
         );
 

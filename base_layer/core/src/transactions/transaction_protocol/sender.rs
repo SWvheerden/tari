@@ -1027,7 +1027,6 @@ mod test {
                 inputs!(script_key),
                 change.script_private_key.clone(),
                 change.change_spend_key.clone(),
-                change.sender_offset_private_key.clone(),
                 Covenant::default(),
             )
             .with_input(input)
@@ -1077,7 +1076,6 @@ mod test {
         let factories = CryptoFactories::default();
         // Alice's parameters
         let key_manager = create_test_core_key_manager_with_memory_db();
-        let alice_key = TestParams::new(&key_manager).await;
         let a_change_key = TestParams::new(&key_manager).await;
         // Bob's parameters
         let bob_key = TestParams::new(&key_manager).await;
@@ -1095,7 +1093,6 @@ mod test {
             .unwrap()
             .with_recipient_data(
                 script.clone(),
-                alice_key.sender_offset_private_key.clone(),
                 OutputFeatures::default(),
                 Covenant::default(),
                 0.into(),
@@ -1108,7 +1105,6 @@ mod test {
                 ExecutionStack::default(),
                 a_change_key.script_private_key,
                 a_change_key.spend_key,
-                a_change_key.sender_offset_private_key,
                 Covenant::default(),
             );
         let mut alice = builder.build().await.unwrap();
@@ -1116,10 +1112,7 @@ mod test {
         let msg = alice.build_single_round_message(&key_manager).await.unwrap();
         // Send message down the wire....and wait for response
         assert!(alice.is_collecting_single_signature());
-        let bob_public_key = key_manager
-            .get_public_key_at_key_id(&alice_key.sender_offset_private_key)
-            .await
-            .unwrap();
+        let bob_public_key = msg.sender_offset_public_key.clone();
         let mut bob_output = KeyManagerOutput::new_current_version(
             MicroTari(1200) - fee - MicroTari(10),
             bob_key.spend_key,
@@ -1211,7 +1204,6 @@ mod test {
                 inputs!(script_key),
                 change.script_private_key.clone(),
                 change.change_spend_key.clone(),
-                change.sender_offset_private_key.clone(),
                 Covenant::default(),
             )
             .with_input(input)
@@ -1219,7 +1211,6 @@ mod test {
             .unwrap()
             .with_recipient_data(
                 script.clone(),
-                alice_key.sender_offset_private_key.clone(),
                 OutputFeatures::default(),
                 Covenant::default(),
                 0.into(),
@@ -1240,10 +1231,7 @@ mod test {
 
         // Send message down the wire....and wait for response
         assert!(alice.is_collecting_single_signature());
-        let bob_public_key = key_manager
-            .get_public_key_at_key_id(&alice_key.sender_offset_private_key)
-            .await
-            .unwrap();
+        let bob_public_key = msg.sender_offset_public_key.clone();
         let mut bob_output = KeyManagerOutput::new_current_version(
             MicroTari(5000),
             bob_key.spend_key,
@@ -1306,7 +1294,6 @@ mod test {
     async fn single_recipient_range_proof_fail() {
         // Alice's parameters
         let key_manager = create_test_core_key_manager_with_memory_db_with_range_proof_size(32);
-        let a = TestParams::new(&key_manager).await;
         // Bob's parameters
         let bob_key = TestParams::new(&key_manager).await;
         let input = create_test_input((2u64.pow(32) + 2001).into(), 0, &key_manager).await;
@@ -1325,7 +1312,6 @@ mod test {
                 inputs!(script_key),
                 change.script_private_key.clone(),
                 change.change_spend_key.clone(),
-                change.sender_offset_private_key.clone(),
                 Covenant::default(),
             )
             .with_input(input)
@@ -1333,7 +1319,6 @@ mod test {
             .unwrap()
             .with_recipient_data(
                 script.clone(),
-                a.sender_offset_private_key.clone(),
                 OutputFeatures::default(),
                 Covenant::default(),
                 0.into(),
@@ -1347,10 +1332,7 @@ mod test {
         // Send message down the wire....and wait for response
         assert!(alice.is_collecting_single_signature());
         // Receiver gets message, deserializes it etc, and creates his response
-        let bob_public_key = key_manager
-            .get_public_key_at_key_id(&a.sender_offset_private_key)
-            .await
-            .unwrap();
+        let bob_public_key = msg.sender_offset_public_key.clone();
         let bob_output = KeyManagerOutput::new_current_version(
             (2u64.pow(32) + 1).into(),
             bob_key.spend_key,
@@ -1387,7 +1369,6 @@ mod test {
         let script = script!(Nop);
         let mut builder = SenderTransactionProtocol::builder(create_consensus_constants(0), key_manager.clone());
         let change = TestParams::new(&key_manager).await;
-        let bob_key = TestParams::new(&key_manager).await;
         let script_key = key_manager
             .get_public_key_at_key_id(&change.script_private_key)
             .await
@@ -1400,7 +1381,6 @@ mod test {
                 inputs!(script_key),
                 change.script_private_key.clone(),
                 change.change_spend_key.clone(),
-                change.sender_offset_private_key.clone(),
                 Covenant::default(),
             )
             .with_input(input)
@@ -1408,7 +1388,6 @@ mod test {
             .unwrap()
             .with_recipient_data(
                 script.clone(),
-                bob_key.sender_offset_private_key,
                 OutputFeatures::default(),
                 Covenant::default(),
                 0.into(),
@@ -1427,7 +1406,6 @@ mod test {
     async fn allow_fee_larger_than_amount() {
         // Alice's parameters
         let key_manager = create_test_core_key_manager_with_memory_db();
-        let alice = TestParams::new(&key_manager).await;
         let (utxo_amount, fee_per_gram, amount) = (MicroTari(2500), MicroTari(10), MicroTari(500));
         let input = create_test_input(utxo_amount, 0, &key_manager).await;
         let script = script!(Nop);
@@ -1445,7 +1423,6 @@ mod test {
                 inputs!(script_key),
                 change.script_private_key.clone(),
                 change.change_spend_key.clone(),
-                change.sender_offset_private_key.clone(),
                 Covenant::default(),
             )
             .with_input(input)
@@ -1454,7 +1431,6 @@ mod test {
             .with_prevent_fee_gt_amount(false)
             .with_recipient_data(
                 script.clone(),
-                alice.sender_offset_private_key,
                 OutputFeatures::default(),
                 Covenant::default(),
                 0.into(),
@@ -1474,7 +1450,6 @@ mod test {
         // Alice's parameters
         let key_manager_alice = create_test_core_key_manager_with_memory_db();
         let key_manager_bob = create_test_core_key_manager_with_memory_db();
-        let alice_test_params = TestParams::new(&key_manager_alice).await;
         // Bob's parameters
         let bob_test_params = TestParams::new(&key_manager_bob).await;
         let alice_value = MicroTari(25000);
@@ -1496,7 +1471,6 @@ mod test {
                 inputs!(script_key),
                 change_params.script_private_key.clone(),
                 change_params.change_spend_key.clone(),
-                change_params.sender_offset_private_key.clone(),
                 Covenant::default(),
             )
             .with_input(input)
@@ -1504,7 +1478,6 @@ mod test {
             .unwrap()
             .with_recipient_data(
                 script.clone(),
-                alice_test_params.sender_offset_private_key.clone(),
                 OutputFeatures::default(),
                 Covenant::default(),
                 0.into(),
@@ -1530,10 +1503,7 @@ mod test {
         // Send message down the wire....and wait for response
         assert!(alice.is_collecting_single_signature());
 
-        let bob_public_key = key_manager_alice
-            .get_public_key_at_key_id(&alice_test_params.sender_offset_private_key)
-            .await
-            .unwrap();
+        let bob_public_key = msg.sender_offset_public_key.clone();
         let bob_output = KeyManagerOutput::new_current_version(
             MicroTari(5000),
             bob_test_params.spend_key,

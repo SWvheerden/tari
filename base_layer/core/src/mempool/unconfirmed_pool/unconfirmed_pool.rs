@@ -742,7 +742,6 @@ mod test {
                 change_input_data,
                 test_params.script_private_key.clone(),
                 test_params.change_spend_key.clone(),
-                test_params.sender_offset_private_key.clone(),
                 Covenant::default(),
             );
 

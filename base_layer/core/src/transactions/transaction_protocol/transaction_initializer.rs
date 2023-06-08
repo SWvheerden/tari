@@ -144,13 +144,16 @@ where KM: BaseLayerKeyManagerInterface
     pub async fn with_recipient_data(
         &mut self,
         recipient_script: TariScript,
-        recipient_sender_offset_key_id: TariKeyId,
         recipient_output_features: OutputFeatures,
         recipient_covenant: Covenant,
         recipient_minimum_value_promise: MicroTari,
         amount: MicroTari,
     ) -> Result<&mut Self, KeyManagerServiceError> {
         let (recipient_ephemeral_public_key_nonce, _) = self
+            .key_manager
+            .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
+            .await?;
+        let (recipient_sender_offset_key_id, _) = self
             .key_manager
             .get_next_key_id(CoreKeyManagerBranch::Nonce.get_branch_key())
             .await?;
@@ -356,8 +359,10 @@ where KM: BaseLayerKeyManagerInterface
                         let change_script_key_id = change_data.change_script_key_id.clone();
                         let change_key_id = change_data.change_spending_key_id.clone();
                         let (sender_offset_key_id, sender_offset_public_key) = self
+                            .key_manager
                             .get_next_key_id(&CoreKeyManagerBranch::Nonce.get_branch_key())
-                            .await?;
+                            .await
+                            .map_err(|e| e.to_string())?;
                         let input_data = change_data.change_input_data.clone();
 
                         let covenant = self
@@ -659,7 +664,6 @@ mod test {
             Default::default(),
             change.script_private_key.clone(),
             change.change_spend_key.clone(),
-            change.sender_offset_private_key.clone(),
             Covenant::default(),
         );
         let result = builder.build().await.unwrap();
@@ -818,7 +822,6 @@ mod test {
         // Create some inputs
         let key_manager = create_test_core_key_manager_with_memory_db();
         let p = TestParams::new(&key_manager).await;
-        let recipient = TestParams::new(&key_manager).await;
         let tx_fee = p
             .fee()
             .calculate(MicroTari(1), 1, 1, 1, p.get_size_for_default_features_and_scripts(1));
@@ -842,18 +845,10 @@ mod test {
                 inputs!(script_key),
                 change.script_private_key.clone(),
                 change.change_spend_key.clone(),
-                change.sender_offset_private_key.clone(),
                 Covenant::default(),
             )
             .with_fee_per_gram(MicroTari(1))
-            .with_recipient_data(
-                script,
-                recipient.sender_offset_private_key,
-                Default::default(),
-                Default::default(),
-                0.into(),
-                MicroTari(500),
-            )
+            .with_recipient_data(script, Default::default(), Default::default(), 0.into(), MicroTari(500))
             .await
             .unwrap();
         // .with_change_script(script, ExecutionStack::default(), PrivateKey::default());
@@ -866,7 +861,6 @@ mod test {
         // Create some inputs
         let key_manager = create_test_core_key_manager_with_memory_db();
         let p = TestParams::new(&key_manager).await;
-        let recipient = TestParams::new(&key_manager).await;
         let input = create_test_input(MicroTari(400), 0, &key_manager).await;
         let script = script!(Nop);
         let output = create_key_manager_output_with_data(
@@ -899,13 +893,11 @@ mod test {
                 inputs!(script_key),
                 change.script_private_key.clone(),
                 change.change_spend_key.clone(),
-                change.sender_offset_private_key.clone(),
                 Covenant::default(),
             )
             .with_fee_per_gram(MicroTari(1))
             .with_recipient_data(
                 script.clone(),
-                recipient.sender_offset_private_key,
                 Default::default(),
                 Default::default(),
                 0.into(),
@@ -925,7 +917,6 @@ mod test {
         // Create some inputs
         let key_manager = create_test_core_key_manager_with_memory_db();
         let p = TestParams::new(&key_manager).await;
-        let recipient = TestParams::new(&key_manager).await;
         let input1 = create_test_input(MicroTari(2000), 0, &key_manager).await;
         let input2 = create_test_input(MicroTari(3000), 0, &key_manager).await;
         let fee_per_gram = MicroTari(6);
@@ -971,13 +962,11 @@ mod test {
                 inputs!(script_key),
                 change.script_private_key.clone(),
                 change.change_spend_key.clone(),
-                change.sender_offset_private_key.clone(),
                 Covenant::default(),
             )
             .with_fee_per_gram(fee_per_gram)
             .with_recipient_data(
                 script.clone(),
-                recipient.sender_offset_private_key,
                 Default::default(),
                 Default::default(),
                 0.into(),
