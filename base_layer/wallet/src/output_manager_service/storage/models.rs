@@ -28,7 +28,11 @@ use tari_common_types::{
     transaction::TxId,
     types::{BlockHash, Commitment, HashOutput, PrivateKey},
 };
-use tari_core::transactions::{transaction_components::KeyManagerOutput, CryptoFactories};
+use tari_core::{
+    core_key_manager::TariKeyId,
+    transactions::{transaction_components::KeyManagerOutput, CryptoFactories},
+};
+use tari_key_manager::key_manager_service::KeyId;
 use tari_script::{ExecutionStack, TariScript};
 
 use crate::output_manager_service::{
@@ -144,8 +148,7 @@ impl From<SpendingPriority> for u32 {
 #[derivative(Debug)]
 pub struct KnownOneSidedPaymentScript {
     pub script_hash: Vec<u8>,
-    #[derivative(Debug = "ignore")]
-    pub private_key: PrivateKey,
+    pub private_key: TariKeyId,
     pub script: TariScript,
     pub input: ExecutionStack,
     pub script_lock_height: u64,

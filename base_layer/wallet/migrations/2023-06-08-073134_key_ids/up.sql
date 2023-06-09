@@ -5,13 +5,13 @@ DROP TABLE outputs;
 CREATE TABLE outputs
 (
     id                                      INTEGER PRIMARY KEY NOT NULL,
-    commitment                              BLOB                NULL,
+    commitment                              BLOB                NOT NULL,
     spending_key                            TEXT                NOT NULL,
     value                                   BIGINT              NOT NULL,
     output_type                             INTEGER             NOT NULL,
     maturity                                BIGINT              NOT NULL,
     status                                  INTEGER             NOT NULL,
-    hash                                    BLOB                NULL,
+    hash                                    BLOB                NOT NULL,
     script                                  BLOB                NOT NULL,
     input_data                              BLOB                NOT NULL,
     script_private_key                      TEXT                NOT NULL,
@@ -130,4 +130,17 @@ CREATE TABLE burnt_proofs
     reciprocal_claim_public_key TEXT                NOT NULL,
     payload                     TEXT                NOT NULL,
     burned_at                   DATETIME            NOT NULL
+);
+
+-- Any old 'known_one_sided_payment_scripts' will not be valid due to the change in 'private_key' to
+-- -- 'TEXT', so we drop and recreate the table.
+
+DROP TABLE known_one_sided_payment_scripts;
+CREATE TABLE known_one_sided_payment_scripts
+(
+    script_hash        BLOB PRIMARY KEY NOT NULL,
+    private_key        TEXT             NOT NULL,
+    script             BLOB             NOT NULL,
+    input              BLOB             NOT NULL,
+    script_lock_height UNSIGNED BIGINT  NOT NULL DEFAULT 0
 );

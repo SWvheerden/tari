@@ -38,7 +38,9 @@ pub struct WalletIdentity {
 impl WalletIdentity {
     pub fn new(node_identity: Arc<NodeIdentity>, network: Network) -> Self {
         let address = TariAddress::new(node_identity.public_key().clone(), network);
-        let wallet_node_key_id = TariKeyId::Imported {key: node_identity.public_key().clone()};
+        let wallet_node_key_id = TariKeyId::Imported {
+            key: node_identity.public_key().clone(),
+        };
         WalletIdentity {
             node_identity,
             network,

@@ -29,7 +29,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use tari_common_types::types::{ComAndPubSignature, FixedHash, PublicKey};
+use tari_common_types::types::{ComAndPubSignature, Commitment, FixedHash, PublicKey};
 use tari_script::{ExecutionStack, TariScript};
 
 use super::TransactionOutputVersion;
@@ -243,18 +243,25 @@ impl KeyManagerOutput {
         &self,
         key_manager: &KM,
     ) -> Result<FixedHash, TransactionError> {
-        let value = self.value.into();
-        let commitment = key_manager.get_commitment(&self.spending_key_id, &value).await?;
         Ok(transaction_components::hash_output(
             self.version,
             &self.features,
-            &commitment,
+            &self.commitment(key_manager),
             &self.script,
             &self.covenant,
             &self.encrypted_data,
             &self.sender_offset_public_key,
             self.minimum_value_promise,
         ))
+    }
+
+    pub async fn commitment<KM: BaseLayerKeyManagerInterface>(
+        &self,
+        key_manager: &KM,
+    ) -> Result<Commitment, TransactionError> {
+        Ok(key_manager
+            .get_commitment(&self.spending_key_id, self.value.into())
+            .await?)
     }
 
     /// Is this a burned output kernel?

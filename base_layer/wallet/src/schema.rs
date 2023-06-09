@@ -59,7 +59,7 @@ diesel::table! {
 diesel::table! {
     known_one_sided_payment_scripts (script_hash) {
         script_hash -> Binary,
-        private_key -> Binary,
+        private_key -> Text,
         script -> Binary,
         input -> Binary,
         script_lock_height -> BigInt,
@@ -85,13 +85,13 @@ diesel::table! {
 diesel::table! {
     outputs (id) {
         id -> Integer,
-        commitment -> Nullable<Binary>,
+        commitment -> Binary,
         spending_key -> Text,
         value -> BigInt,
         output_type -> Integer,
         maturity -> BigInt,
         status -> Integer,
-        hash -> Nullable<Binary>,
+        hash -> Binary,
         script -> Binary,
         input_data -> Binary,
         script_private_key -> Text,

@@ -2338,7 +2338,8 @@ mod test {
             OutputFeatures::default(),
             &test_params,
             MicroTari::from(100_000),
-        ).await
+        )
+        .await
         .unwrap();
         let amount = MicroTari::from(10_000);
         builder

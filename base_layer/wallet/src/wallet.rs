@@ -54,7 +54,7 @@ use tari_core::{
         CryptoFactories,
     },
 };
-use tari_crypto::{hash::blake2::Blake256, hash_domain, signatures::SchnorrSignatureError, tari_utilities::hex::Hex};
+use tari_crypto::{hash::blake2::Blake256, hash_domain, signatures::SchnorrSignatureError};
 use tari_key_manager::{
     cipher_seed::CipherSeed,
     key_manager::KeyManager,
