@@ -27,6 +27,7 @@ use std::{
 };
 
 use anyhow::anyhow;
+use log::trace;
 use serde::{Deserialize, Serialize};
 use tari_common::DnsNameServer;
 use tari_comms::{
@@ -39,6 +40,8 @@ use tari_utilities::hex::Hex;
 
 use super::dns::DnsClientError;
 use crate::dns::{default_trust_anchor, DnsClient};
+
+const LOG_TARGET: &str = "comms::p2p::peer_seeds";
 
 #[derive(Clone)]
 pub struct DnsSeedResolver {
@@ -61,6 +64,7 @@ impl DnsSeedResolver {
     /// ## Arguments
     /// -`name_server` - the DNS name server to use to resolve records
     pub async fn connect(name_server: DnsNameServer) -> Result<Self, DnsClientError> {
+        trace!(target: LOG_TARGET, "DnsSeedResolver::connect");
         let client = DnsClient::connect(name_server).await?;
         Ok(Self { client })
     }

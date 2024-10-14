@@ -51,7 +51,7 @@ use super::DnsClientError;
 #[cfg(test)]
 use crate::dns::mock::{DefaultOnSend, MockClientHandle};
 use crate::dns::roots;
-const LOG_TARGET: &str = "comms::dns";
+const LOG_TARGET: &str = "comms::p2p::dns";
 const TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
@@ -69,6 +69,7 @@ impl DnsClient {
     }
 
     pub async fn connect(name_server: DnsNameServer) -> Result<Self, DnsClientError> {
+        trace!(target: LOG_TARGET, "DnsClient::connect");
         let client = Client::connect(name_server).await?;
         Ok(DnsClient::Normal(client))
     }
@@ -160,9 +161,11 @@ impl Client<AsyncDnssecClient> {
 
 impl Client<AsyncClient> {
     pub async fn connect(name_server: DnsNameServer) -> Result<Self, DnsClientError> {
+        trace!(target: LOG_TARGET, "Client<AsyncClient>::connect");
         let shutdown = Shutdown::new();
 
         let (socket_addr, dns_name) = socket_addr_and_dns_name(name_server)?;
+        trace!(target: LOG_TARGET, "socket_addr: {}, dns_name: {:?}", socket_addr, dns_name);
 
         let client = match dns_name {
             Some(dns_name) => {
@@ -217,14 +220,15 @@ fn default_tls_client_config() -> Arc<ClientConfig> {
 }
 
 fn socket_addr_and_dns_name(server: DnsNameServer) -> Result<(SocketAddr, Option<String>), DnsClientError> {
+    trace!(target: LOG_TARGET, "socket_addr_and_dns_name");
     match server {
         DnsNameServer::System => {
             let (conf, _opts) = system_conf::read_system_conf()?;
             trace!(
-                            target: LOG_TARGET,
-                            "System resolvers got: {:?}",
-                            conf,
-                        );
+                target: LOG_TARGET,
+                "System resolvers got: {:?}",
+                conf,
+            );
             let found = conf
                 .name_servers()
                 .iter()
