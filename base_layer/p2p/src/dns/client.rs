@@ -41,6 +41,7 @@ use hickory_client::{
     tcp::TcpClientStream,
 };
 use hickory_resolver::system_conf;
+use log::trace;
 use rustls::{ClientConfig, RootCertStore};
 use tari_common::DnsNameServer;
 use tari_shutdown::Shutdown;
@@ -50,7 +51,7 @@ use super::DnsClientError;
 #[cfg(test)]
 use crate::dns::mock::{DefaultOnSend, MockClientHandle};
 use crate::dns::roots;
-
+const LOG_TARGET: &str = "comms::dns";
 const TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
@@ -219,6 +220,11 @@ fn socket_addr_and_dns_name(server: DnsNameServer) -> Result<(SocketAddr, Option
     match server {
         DnsNameServer::System => {
             let (conf, _opts) = system_conf::read_system_conf()?;
+            trace!(
+                            target: LOG_TARGET,
+                            "System resolvers got: {:?}",
+                            conf,
+                        );
             let found = conf
                 .name_servers()
                 .iter()
