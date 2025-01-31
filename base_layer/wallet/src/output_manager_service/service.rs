@@ -284,7 +284,7 @@ where
                     use_output,
                 )
                 .await
-                .map(OutputManagerResponse::EncumberAggregateUtxo),
+                .map(|val| (OutputManagerResponse::EncumberAggregateUtxo(Box::new(val)))),
             OutputManagerRequest::SpendBackupPreMineUtxo {
                 tx_id,
                 fee_per_gram,
