@@ -203,6 +203,7 @@ impl DifficultyAdjustment for LinearWeightedMovingAverage {
 
 #[cfg(test)]
 mod test {
+    use rand::RngExt;
     use tari_transaction_components::tari_proof_of_work::{Difficulty, DifficultyAdjustment};
     use tari_utilities::epoch_time::EpochTime;
 
@@ -318,5 +319,116 @@ mod test {
         }
         // We don't care about the value, we just want to test that get_difficulty does not panic with an overflow.
         dif.get_difficulty().unwrap();
+    }
+
+    fn response_test(mut lwma: LinearWeightedMovingAverage, hash_change: f32, difficulty: Difficulty)-> usize{
+        let mut time = 0;
+        while !lwma.is_full(){
+            time += 100;
+            lwma.add(EpochTime::from(time), difficulty).unwrap();
+        }
+        let old_diff = lwma.get_difficulty().unwrap();
+        let stop_diff = Difficulty::from_u64((old_diff.as_u64() as f32 * hash_change) as u64).unwrap();
+
+        let mut new_time = ((old_diff.as_u64() as f32)/ (stop_diff.as_u64() as f32) * 100.0) as u64;
+        time += new_time;
+        lwma.add(EpochTime::from(time), old_diff).unwrap();
+        let mut new_diff = lwma.get_difficulty().unwrap();
+        let mut blocks = 1;
+        while (new_diff.as_u64() as f32) / (stop_diff.as_u64() as f32) < 0.95 ||  (new_diff.as_u64() as f32) / (stop_diff.as_u64() as f32) > 1.05 {
+            blocks += 1;
+            new_time = (((new_diff.as_u64() as f32) / (stop_diff.as_u64() as f32)) * 100.0) as u64;
+            time += new_time;
+            lwma.add(EpochTime::from(time), new_diff).unwrap();
+            new_diff = lwma.get_difficulty().unwrap();
+        }
+        blocks
+    }
+
+    fn variance_test(mut lwma: LinearWeightedMovingAverage, hash_variance: f32, difficulty: Difficulty, amount: usize)-> (u64, u64, u64, u64){
+        let mut time:i64 = 0;
+        while !lwma.is_full(){
+            time += 100;
+            lwma.add(EpochTime::from(time as u64), difficulty).unwrap();
+        }
+        let mut difficulties = Vec::with_capacity(amount);
+        let variance = (100.0 * hash_variance) as i64;
+        let mut rng = rand::rng();
+        let change = rng.random_range(-variance..=variance);
+        let mut new_time = 100 + change;
+
+        time += new_time;
+        lwma.add(EpochTime::from(time as u64), difficulty).unwrap();
+        let mut new_diff = lwma.get_difficulty().unwrap();
+        loop{
+            let variance = (100.0 * hash_variance) as i64;
+            let change = rng.random_range(-variance..=variance);
+            new_time = (((new_diff.as_u64() as f32) / (difficulty.as_u64() as f32)) * 100.0) as i64 + change;
+            time += new_time;
+            lwma.add(EpochTime::from(time as u64), new_diff).unwrap();
+            new_diff = lwma.get_difficulty().unwrap();
+            difficulties.push(new_diff);
+            if difficulties.len() == amount {
+                break;
+            }
+        }
+        difficulties.sort();
+        let mean = difficulties[amount/2].as_u64();
+        let avg = (difficulties.iter().fold(0u128, |acc, d| acc + d.as_u64() as u128) / amount as u128) as u64;
+        let min = difficulties[0].as_u64();
+        let max = difficulties[amount-1].as_u64();
+        (mean, avg, min, max)
+    }
+
+    #[test]
+    fn respnse_lwma(){
+        println!("reduce hash rate");
+        let block_windows = [30, 45, 60, 80, 90, 110, 150];
+        let hash_rates = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3];
+        for hash in hash_rates {
+            println!("hash rate: {}", hash);
+            for window in block_windows {
+                let lwma = LinearWeightedMovingAverage::new(window, 100).unwrap();
+                let blocks = response_test(lwma, hash, Difficulty::from_u64(100_000).unwrap());
+                println!("block window: {}, blocks: {}", window, blocks);
+            }
+        }
+
+
+        println!("increase hash rate");
+        let block_windows = [30, 45, 60, 80, 90, 110, 150];
+        let hash_rates = [1.1, 1.3, 1.5, 1.7, 2.0, 2.1, 5.0];
+        for hash in hash_rates {
+            println!("hash rate: {}", hash);
+            for window in block_windows {
+                let lwma = LinearWeightedMovingAverage::new(window, 100).unwrap();
+                let blocks = response_test(lwma, hash, Difficulty::from_u64(100_000).unwrap());
+                println!("block window: {}, blocks: {}", window, blocks);
+            }
+        }
+        panic!("end");
+    }
+
+    #[test]
+    fn variance_lwma(){
+
+        let block_windows = [30, 45, 60, 80, 90, 110, 150];
+        let variance = [0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0];
+        for var in variance {
+            println!("variance rate: {}", var);
+            for window in block_windows {
+                println!("block window: {}", window);
+                let lwma = LinearWeightedMovingAverage::new(window, 100).unwrap();
+                let (mean, avg, min, max) = variance_test(lwma, var, Difficulty::from_u64(100_000_000).unwrap(), 10000);
+                println!("mean: {}, avg: {}, min: {}, max: {}", mean, avg, min, max);
+                let mean_percent = ((mean as f32)/100_000_000.0 -1.0)*100.0;
+                let avg_percent = ((avg as f32)/100_000_000.0 -1.0)*100.0;
+                let min_percent = ((min as f32)/100_000_000.0 -1.0)*100.0;
+                let max_percent = ((max as f32)/100_000_000.0 -1.0)*100.0;
+                println!("percentage mean: {}, avg: {}, min: {}, max: {}", mean_percent, avg_percent, min_percent, max_percent);
+            }
+        }
+
+        panic!("end");
     }
 }

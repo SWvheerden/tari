@@ -61,6 +61,7 @@ mod unban_all_peers;
 mod version;
 mod watch_command;
 mod whoami;
+mod diff_stats;
 
 use std::{
     str::FromStr,
@@ -156,6 +157,7 @@ pub enum Command {
     Exit(quit::Args),
     Watch(watch_command::Args),
     PrintEnv(print_env::Args),
+    DiffStats(diff_stats::Args),
 }
 
 impl Command {
@@ -243,8 +245,7 @@ impl CommandContext {
                 Command::FetchAllOrphanHeaders(_) |
                 Command::ListBadBlocks(_) |
                 Command::GetBlock(_) |
-                Command::ListHeaders(_) |
-                Command::HeaderStats(_) |
+                Command::ListHeaders(_)  |
                 Command::SearchPayref(_) |
                 Command::SearchKernel(_) |
                 Command::GetMempoolStats(_) |
@@ -262,7 +263,9 @@ impl CommandContext {
                 Command::TestPeerLiveness(_) => 240,
                 // These commands involve intense blockchain db operations and needs a lot of time to complete
                 Command::CheckDb(_) | Command::PeriodStats(_) | Command::RewindBlockchain(_) => 600,
-                Command::SearchUtxo(_) => 1200,
+                Command::SearchUtxo(_)|
+                Command::HeaderStats(_)|
+                Command::DiffStats(_) => 2000000,
             };
             let fut = self.handle_command(args.command);
             if let Err(e) = time::timeout(Duration::from_secs(time_out), fut).await? {
@@ -331,6 +334,7 @@ impl HandleCommand<Command> for CommandContext {
             Command::ListValidatorNodes(args) => self.handle_command(args).await,
             Command::CreateTlsCerts(args) => self.handle_command(args).await,
             Command::PrintEnv(args) => self.handle_command(args).await,
+            Command::DiffStats(args) => self.handle_command(args).await,
         }
     }
 }
