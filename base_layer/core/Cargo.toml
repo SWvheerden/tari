@@ -69,7 +69,7 @@ tiny-keccak = { package = "tari-tiny-keccak", version = "2.0.2", features = [
     "keccak",
 ] }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["time", "sync", "macros", "net"] }
+tokio = { workspace = true, features = ["time", "sync", "macros", "net", "fs"] }
 tracing = "0.1.26"
 primitive-types = { version = "0.12", features = ["serde"] }
 url = "2.5.4"
